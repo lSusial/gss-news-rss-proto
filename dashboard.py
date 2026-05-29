@@ -20,6 +20,7 @@ COUNTRIES = [
     ("🇻🇳", "VN",     "베트남"),
     ("🇰🇭", "KH",     "캄보디아"),
     ("🇲🇲", "MM",     "미얀마"),
+    ("🇰🇷", "KR",     "한국 시각"),
 ]
 
 RANK_COLORS = ["#ff4b4b", "#ff8c00", "#ffd700", "#4fc3f7", "#4fc3f7",
@@ -53,7 +54,8 @@ def load_overview():
             (SELECT COUNT(*) FROM articles_raw)                                AS total,
             (SELECT COUNT(*) FROM media_source_feeds WHERE is_active=1)        AS feeds,
             (SELECT MAX(finished_at) FROM fetch_runs)                          AS last_fetch,
-            (SELECT COUNT(*) FROM articles_raw WHERE ai_score IS NOT NULL)     AS ai_analyzed
+            (SELECT COUNT(*) FROM articles_raw WHERE ai_score IS NOT NULL)     AS ai_analyzed,
+            (SELECT COUNT(*) FROM media_sources WHERE tier=0)                  AS official_sources
     """).fetchone())
 
 @st.cache_data(ttl=60)
@@ -63,7 +65,8 @@ def load_country_stat(code: str) -> dict:
             COUNT(*)                                                            AS total,
             SUM(CASE WHEN filter_decision='passed'   THEN 1 ELSE 0 END)        AS passed,
             SUM(CASE WHEN ai_score IS NOT NULL       THEN 1 ELSE 0 END)        AS ai_done,
-            COUNT(DISTINCT source_id)                                           AS sources
+            COUNT(DISTINCT source_id)                                           AS sources,
+            SUM(CASE WHEN filter_reason='official_source' THEN 1 ELSE 0 END)   AS official
         FROM articles_raw
         WHERE source_id IN (
             SELECT source_id FROM media_sources WHERE primary_country_code = ?
@@ -71,11 +74,27 @@ def load_country_stat(code: str) -> dict:
     """, (code,)).fetchone())
 
 @st.cache_data(ttl=60)
-def load_ai_top(code: str, limit: int = 10) -> list[dict]:
-    """AI 중요도 점수 기준 TOP N 기사 (ai_score 있는 것만)."""
+def load_official_articles(code: str, limit: int = 10) -> list[dict]:
+    """Tier 0 공식기관 기사 최신 N건."""
     rows = conn.execute("""
         SELECT m.media_name, a.title, a.link, a.published_at,
                a.ai_score, a.summary_ko
+        FROM articles_raw a
+        JOIN media_sources m ON m.source_id = a.source_id
+        WHERE m.primary_country_code = ?
+          AND m.tier = 0
+          AND a.filter_decision = 'passed'
+        ORDER BY a.published_at DESC NULLS LAST, a.fetched_at DESC
+        LIMIT ?
+    """, (code, limit)).fetchall()
+    return [dict(r) for r in rows]
+
+@st.cache_data(ttl=60)
+def load_ai_top(code: str, limit: int = 10) -> list[dict]:
+    """AI 중요도 점수 기준 TOP N 기사 (ai_score 있는 것만)."""
+    rows = conn.execute("""
+        SELECT m.media_name, m.tier, a.title, a.link, a.published_at,
+               a.ai_score, a.summary_ko, a.filter_reason
         FROM articles_raw a
         JOIN media_sources m ON m.source_id = a.source_id
         WHERE m.primary_country_code = ?
@@ -89,12 +108,13 @@ def load_ai_top(code: str, limit: int = 10) -> list[dict]:
 @st.cache_data(ttl=60)
 def load_articles(code: str, limit: int = 30) -> list[dict]:
     rows = conn.execute("""
-        SELECT m.media_name, a.title, a.link, a.published_at, a.filter_reason, a.ai_score
+        SELECT m.media_name, m.tier, a.title, a.link, a.published_at,
+               a.filter_reason, a.ai_score
         FROM articles_raw a
         JOIN media_sources m ON m.source_id = a.source_id
         WHERE m.primary_country_code = ?
           AND a.filter_decision = 'passed'
-        ORDER BY a.published_at DESC NULLS LAST, a.fetched_at DESC
+        ORDER BY m.tier ASC, a.published_at DESC NULLS LAST, a.fetched_at DESC
         LIMIT ?
     """, (code, limit)).fetchall()
     return [dict(r) for r in rows]
@@ -102,14 +122,14 @@ def load_articles(code: str, limit: int = 30) -> list[dict]:
 @st.cache_data(ttl=60)
 def load_sources_for_country(code: str) -> list[dict]:
     rows = conn.execute("""
-        SELECT m.media_name,
+        SELECT m.media_name, m.tier,
                COUNT(*)                                                      AS total,
                SUM(CASE WHEN a.filter_decision='passed' THEN 1 ELSE 0 END)  AS passed
         FROM articles_raw a
         JOIN media_sources m ON m.source_id = a.source_id
         WHERE m.primary_country_code = ?
-        GROUP BY m.media_name
-        ORDER BY passed DESC
+        GROUP BY m.media_name, m.tier
+        ORDER BY m.tier ASC, passed DESC
     """, (code,)).fetchall()
     return [dict(r) for r in rows]
 
@@ -137,6 +157,14 @@ def score_badge(score: int | None) -> str:
     l = labels.get(score, str(score))
     return f"<span style='background:{c};color:#fff;font-size:0.72em;padding:2px 7px;border-radius:10px;font-weight:700'>{l}</span>"
 
+def official_badge() -> str:
+    return "<span style='background:#1a6b3c;color:#fff;font-size:0.70em;padding:2px 7px;border-radius:10px;font-weight:700'>🏛 공식</span>"
+
+def tier_label(tier: int) -> str:
+    if tier == 0:
+        return official_badge()
+    return ""
+
 # ---------------------------------------------------------------------------
 # 사이드바
 # ---------------------------------------------------------------------------
@@ -148,6 +176,8 @@ with st.sidebar:
     ov = load_overview()
     st.metric("관련 기사", f"{ov['passed']:,}건")
     st.metric("활성 피드", f"{ov['feeds']}개")
+    if ov.get("official_sources"):
+        st.metric("공식기관 소스", f"{ov['official_sources']}개")
     if ov.get("ai_analyzed"):
         st.metric("AI 분석 완료", f"{ov['ai_analyzed']:,}건")
 
@@ -164,8 +194,8 @@ with st.sidebar:
         st.rerun()
 
     st.divider()
-    st.caption("수집 기준: 금융·경제·ESG 키워드")
-    st.caption("AI 분석: `python main.py ai-rank`")
+    st.caption("🏛 공식기관: 중앙은행·금융감독원 자동 통과")
+    st.caption("🤖 AI 분석: `python main.py ai-rank`")
 
 # ---------------------------------------------------------------------------
 # 메인: 국가별 탭
@@ -177,20 +207,57 @@ tabs = st.tabs(tab_labels)
 
 for tab, (flag, code, name) in zip(tabs, COUNTRIES):
     with tab:
-        stat   = load_country_stat(code)
-        passed = stat["passed"] or 0
-        total  = stat["total"]  or 0
+        stat    = load_country_stat(code)
+        passed  = stat["passed"]  or 0
+        total   = stat["total"]   or 0
         ai_done = stat["ai_done"] or 0
-        rate   = passed / total * 100 if total else 0
+        official= stat["official"]or 0
+        rate    = passed / total * 100 if total else 0
 
         # 탭 상단 메트릭
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("관련 기사", f"{passed:,}건")
-        m2.metric("수집 기사", f"{total:,}건")
+        m1, m2, m3, m4, m5 = st.columns(5)
+        m1.metric("관련 기사",  f"{passed:,}건")
+        m2.metric("수집 기사",  f"{total:,}건")
         m3.metric("필터 통과율", f"{rate:.0f}%")
-        m4.metric("AI 분석", f"{ai_done:,}건")
+        m4.metric("AI 분석",   f"{ai_done:,}건")
+        m5.metric("공식기관",   f"{official:,}건")
 
         st.divider()
+
+        # ── 🏛 공식기관 보도자료 ──────────────────────────────────────────
+        official_arts = load_official_articles(code, limit=5)
+        if official_arts:
+            st.markdown("### 🏛 공식기관 최신 보도자료")
+            st.caption("중앙은행·금융감독기관의 공식 발표 (필터 자동 통과)")
+            for art in official_arts:
+                pub   = fmt_date(art["published_at"])
+                title = art["title"] or "(제목 없음)"
+                link  = art["link"]  or "#"
+                media = art["media_name"] or ""
+                badge = score_badge(art.get("ai_score"))
+                sumko = art.get("summary_ko") or ""
+                st.markdown(
+                    f"""
+                    <div style="
+                        padding:12px 16px; margin-bottom:8px;
+                        background:#0d2b1a; border-radius:8px;
+                        border-left:4px solid #1a6b3c;
+                    ">
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+                            {official_badge()}
+                            {"" if not badge else badge}
+                            <span style="color:#888;font-size:0.78em">🏛 {media} &nbsp;·&nbsp; 🕐 {pub}</span>
+                        </div>
+                        <a href="{link}" target="_blank" style="
+                            font-size:1.0em;font-weight:600;color:#a8d8b9;
+                            text-decoration:none;line-height:1.4;display:block;margin-bottom:4px
+                        ">{title}</a>
+                        {"<div style='color:#7fb99a;font-size:0.85em;line-height:1.5;padding:6px 8px;background:#071a0e;border-radius:4px'>" + sumko + "</div>" if sumko else ""}
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+            st.divider()
 
         # ── 🤖 AI 선별 주요 뉴스 TOP 10 ─────────────────────────────────────
         ai_articles = load_ai_top(code, limit=10)
@@ -208,6 +275,7 @@ for tab, (flag, code, name) in zip(tabs, COUNTRIES):
                 sumko  = art["summary_ko"] or ""
                 color  = RANK_COLORS[i - 1]
                 badge  = score_badge(score)
+                offbdg = official_badge() if art.get("tier") == 0 else ""
 
                 st.markdown(
                     f"""
@@ -218,6 +286,7 @@ for tab, (flag, code, name) in zip(tabs, COUNTRIES):
                     ">
                         <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
                             <span style="font-size:1.2em;font-weight:900;color:{color};min-width:24px">{i}</span>
+                            {offbdg}
                             {badge}
                             <span style="color:#888;font-size:0.78em">📌 {media} &nbsp;·&nbsp; 🕐 {pub}</span>
                         </div>
@@ -244,7 +313,11 @@ for tab, (flag, code, name) in zip(tabs, COUNTRIES):
         col_news, col_src = st.columns([3, 1])
 
         with col_news:
-            st.markdown("#### 📋 전체 기사 목록")
+            if code == "KR":
+                st.markdown("#### 📋 한국 언론 국제 금융·경제 보도")
+                st.caption("연합뉴스·경제지 등 한국 주요 언론의 금융·경제 기사 (키워드 필터 통과)")
+            else:
+                st.markdown("#### 📋 전체 기사 목록")
             all_articles = load_articles(code, limit=30)
             if not all_articles:
                 st.info("수집된 기사가 없습니다.")
@@ -255,12 +328,14 @@ for tab, (flag, code, name) in zip(tabs, COUNTRIES):
                     link  = art["link"]  or "#"
                     media = art["media_name"] or ""
                     badge = score_badge(art.get("ai_score"))
+                    offbdg = official_badge() if art.get("tier") == 0 else ""
 
                     st.markdown(
                         f"**[{title}]({link})**  \n"
                         f"<span style='color:#888;font-size:0.82em'>"
                         f"📌 {media} &nbsp;·&nbsp; 🕐 {pub}"
                         f"</span>"
+                        + (f" &nbsp;{offbdg}" if offbdg else "")
                         + (f" &nbsp;{badge}" if badge else ""),
                         unsafe_allow_html=True,
                     )
@@ -273,11 +348,13 @@ for tab, (flag, code, name) in zip(tabs, COUNTRIES):
             st.markdown("#### 매체별 현황")
             sources = load_sources_for_country(code)
             for s in sources:
-                p = s["passed"]
-                t = s["total"]
-                r = p / t * 100 if t else 0
+                p    = s["passed"]
+                t    = s["total"]
+                r    = p / t * 100 if t else 0
+                tier = s["tier"]
+                prefix = "🏛 " if tier == 0 else ""
                 st.markdown(
-                    f"**{s['media_name']}**  \n"
+                    f"**{prefix}{s['media_name']}**  \n"
                     f"<span style='color:#888;font-size:0.8em'>"
                     f"{p:,}건 / {t:,}건 ({r:.0f}%)</span>",
                     unsafe_allow_html=True,

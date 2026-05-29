@@ -125,6 +125,19 @@ def sync_sources(conn: sqlite3.Connection, sources_yaml: Path) -> None:
                 "UPDATE media_source_feeds SET is_active = 0 WHERE source_id = ?",
                 (source_id,),
             )
+
+    # sources.yaml에서 완전히 제거된 매체의 피드 비활성화
+    active_names = [src["media_name"] for src in data["sources"]]
+    if active_names:
+        placeholders = ",".join("?" * len(active_names))
+        cur.execute(
+            f"""UPDATE media_source_feeds SET is_active = 0
+                WHERE source_id IN (
+                    SELECT source_id FROM media_sources
+                    WHERE media_name NOT IN ({placeholders})
+                )""",
+            active_names,
+        )
     conn.commit()
 
 

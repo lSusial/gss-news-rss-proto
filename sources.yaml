@@ -486,24 +486,15 @@ sources:
       - section: top
         url: https://news.google.com/rss/search?q=site:vietnamnews.vn+when:1d&hl=en-US&gl=US&ceid=US:en
 
-  - media_name: Tuoi Tre News
+  - media_name: Vietnam Investment Review
     country: VN
     language: en
     tier: 2
     categories: [VN]
     feeds:
-      # tuoitrenews.vn/rss → SSL 에러 → Google News 우회
+      # 베트남 투자·경제 전문지
       - section: top
-        url: https://news.google.com/rss/search?q=site:tuoitrenews.vn+when:1d&hl=en-US&gl=US&ceid=US:en
-
-  - media_name: Saigon Times
-    country: VN
-    language: en
-    tier: 2
-    categories: [VN]
-    feeds:
-      - section: top
-        url: https://news.google.com/rss/search?q=site:english.thesaigontimes.vn+when:1d&hl=en-US&gl=US&ceid=US:en
+        url: https://news.google.com/rss/search?q=site:vir.com.vn+when:1d&hl=en-US&gl=US&ceid=US:en
 
   - media_name: VietnamPlus
     country: VN
@@ -554,15 +545,6 @@ sources:
     feeds:
       - section: top
         url: https://news.google.com/rss/search?q=site:cambodianess.com+when:7d&hl=en-US&gl=US&ceid=US:en
-
-  - media_name: VOD English
-    country: KH
-    language: en
-    tier: 2
-    categories: [KH]
-    feeds:
-      - section: top
-        url: https://news.google.com/rss/search?q=site:vodenglish.news+when:7d&hl=en-US&gl=US&ceid=US:en
 
   - media_name: AKP
     country: KH
@@ -701,3 +683,175 @@ sources:
         url: https://news.google.com/rss/search?q=site:business-standard.com+when:1d&hl=en-US&gl=US&ceid=US:en
       - section: economy
         url: https://news.google.com/rss/search?q=site:business-standard.com+economy+when:1d&hl=en-US&gl=US&ceid=US:en
+
+  # ============================================================
+  # 공식 기관 Tier 0 — 중앙은행·금융감독기관
+  # keyword_filter에서 자동 통과 (filter_stage=1, reason=official_source)
+  # AI 분석 우선 대상
+  # ============================================================
+
+  # --- 미국 ---
+  - media_name: Federal Reserve
+    country: US
+    language: en
+    tier: 0
+    categories: [US, OFFICIAL]
+    feeds:
+      # 공식 RSS 직접 지원 (통화정책 보도자료)
+      - section: monetary_policy
+        url: https://www.federalreserve.gov/feeds/press_monetary.xml
+
+  # --- 일본 ---
+  - media_name: Bank of Japan (Official)
+    country: JP
+    language: en
+    tier: 0
+    categories: [JP, OFFICIAL]
+    feeds:
+      - section: press_releases
+        url: https://news.google.com/rss/search?q=site:boj.or.jp+when:7d&hl=en-US&gl=US&ceid=US:en
+
+  # --- 인도 ---
+  - media_name: Reserve Bank of India (Official)
+    country: IN
+    language: en
+    tier: 0
+    categories: [IN, OFFICIAL]
+    feeds:
+      - section: press_releases
+        url: https://news.google.com/rss/search?q=site:rbi.org.in+when:7d&hl=en-US&gl=US&ceid=US:en
+
+  # --- 인도네시아 ---
+  - media_name: Bank Indonesia (Official)
+    country: ID
+    language: en
+    tier: 0
+    categories: [ID, OFFICIAL]
+    feeds:
+      - section: press_releases
+        url: https://news.google.com/rss/search?q=site:bi.go.id+when:7d&hl=en-US&gl=US&ceid=US:en
+
+  # --- 베트남 ---
+  - media_name: State Bank of Vietnam (Official)
+    country: VN
+    language: en
+    tier: 0
+    categories: [VN, OFFICIAL]
+    feeds:
+      - section: press_releases
+        url: https://news.google.com/rss/search?q=site:sbv.gov.vn+when:7d&hl=en-US&gl=US&ceid=US:en
+
+  # --- 캄보디아 ---
+  - media_name: National Bank of Cambodia (Official)
+    country: KH
+    language: en
+    tier: 0
+    categories: [KH, OFFICIAL]
+    feeds:
+      - section: press_releases
+        url: https://news.google.com/rss/search?q=site:nbc.gov.kh+when:7d&hl=en-US&gl=US&ceid=US:en
+
+  # --- 중국 ---
+  - media_name: PBOC (Official)
+    country: CN
+    language: en
+    tier: 0
+    categories: [CN, OFFICIAL]
+    feeds:
+      - section: press_releases
+        url: https://news.google.com/rss/search?q=site:pbc.gov.cn+when:7d&hl=en-US&gl=US&ceid=US:en
+
+  # ============================================================
+  # 한국 주요 언론 Tier 1 — 국제 금융·경제 한국 시각
+  # ============================================================
+  - media_name: 연합뉴스
+    country: KR
+    language: ko
+    tier: 1
+    categories: [KR]
+    feeds:
+      - section: top
+        url: https://www.yna.co.kr/rss/news.xml
+      - section: economy
+        url: https://www.yna.co.kr/rss/economy.xml
+
+  - media_name: 한국경제
+    country: KR
+    language: ko
+    tier: 1
+    categories: [KR]
+    feeds:
+      - section: top
+        url: https://www.hankyung.com/feed/all-news
+      - section: economy
+        url: https://www.hankyung.com/feed/economy
+
+  - media_name: 매일경제
+    country: KR
+    language: ko
+    tier: 1
+    categories: [KR]
+    feeds:
+      - section: top
+        url: https://www.mk.co.kr/rss/40300001/
+      - section: economy
+        url: https://www.mk.co.kr/rss/30000001/
+
+  - media_name: 동아일보
+    country: KR
+    language: ko
+    tier: 1
+    categories: [KR]
+    feeds:
+      - section: top
+        url: https://rss.donga.com/total.xml
+      - section: economy
+        url: https://rss.donga.com/economy.xml
+
+  - media_name: 조선일보
+    country: KR
+    language: ko
+    tier: 1
+    categories: [KR]
+    feeds:
+      - section: top
+        url: https://www.chosun.com/arc/outboundfeeds/rss/?outputType=xml
+
+  - media_name: 중앙일보
+    country: KR
+    language: ko
+    tier: 1
+    categories: [KR]
+    feeds:
+      - section: top
+        url: https://news.google.com/rss/search?q=site:joongang.co.kr+when:1d&hl=ko&gl=KR&ceid=KR:ko
+
+  # ============================================================
+  # 한국 공식 기관 Tier 0 — 국내 금융·경제 정책 모니터링
+  # ============================================================
+  - media_name: 한국은행 (Official)
+    country: KR
+    language: ko
+    tier: 0
+    categories: [KR, OFFICIAL]
+    feeds:
+      - section: press_releases
+        url: https://news.google.com/rss/search?q=site:bok.or.kr+when:7d&hl=ko&gl=KR&ceid=KR:ko
+
+  - media_name: 기획재정부 (Official)
+    country: KR
+    language: ko
+    tier: 0
+    categories: [KR, OFFICIAL]
+    feeds:
+      - section: press_releases
+        url: https://news.google.com/rss/search?q=site:moef.go.kr+when:7d&hl=ko&gl=KR&ceid=KR:ko
+
+  - media_name: 금융위원회 (Official)
+    country: KR
+    language: ko
+    tier: 0
+    categories: [KR, OFFICIAL]
+    feeds:
+      - section: press_releases
+        url: https://news.google.com/rss/search?q=site:fsc.go.kr+when:7d&hl=ko&gl=KR&ceid=KR:ko

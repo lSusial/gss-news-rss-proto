@@ -132,6 +132,7 @@ def run_ai_ranking(
     params.append(limit_per_country)
 
     # 국가별 최신 limit_per_country 건, ai_score 없는 것
+    # Tier 0 (공식기관) 기사를 먼저 처리 (ORDER BY m.tier ASC)
     if country_code:
         rows = conn.execute(f"""
             SELECT a.article_id, a.title, a.summary, m.primary_country_code AS cc
@@ -140,7 +141,7 @@ def run_ai_ranking(
             WHERE a.filter_decision = 'passed'
               AND a.ai_score IS NULL
               {where_cc}
-            ORDER BY a.published_at DESC NULLS LAST, a.fetched_at DESC
+            ORDER BY m.tier ASC, a.published_at DESC NULLS LAST, a.fetched_at DESC
             LIMIT ?
         """, params).fetchall()
     else:
@@ -157,7 +158,7 @@ def run_ai_ranking(
                 WHERE a.filter_decision = 'passed'
                   AND a.ai_score IS NULL
                   AND m.primary_country_code = ?
-                ORDER BY a.published_at DESC NULLS LAST, a.fetched_at DESC
+                ORDER BY m.tier ASC, a.published_at DESC NULLS LAST, a.fetched_at DESC
                 LIMIT ?
             """, (cc, limit_per_country)).fetchall()
             all_rows.extend(batch)

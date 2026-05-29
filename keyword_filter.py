@@ -167,7 +167,57 @@ COUNTRY_KEYWORDS: dict[str, list[str]] = {
 }
 
 # ---------------------------------------------------------------------------
-# ③ 인도네시아어 금융·경제 키워드
+# ③ 한국어 금융·경제 키워드
+# ---------------------------------------------------------------------------
+KOREAN_FINANCE_KEYWORDS: list[str] = [
+    # 거시경제
+    "금리", "기준금리", "금리인상", "금리인하", "금리동결",
+    "환율", "원달러", "달러",
+    "인플레이션", "물가", "소비자물가", "생산자물가",
+    "경제성장", "성장률", "경기", "경기침체", "경기둔화", "불황",
+    "gdp", "국내총생산",
+    "무역", "교역", "수출", "수입", "무역수지", "경상수지",
+    "재정", "예산", "재정적자", "재정흑자", "국가채무", "국채",
+    "적자", "흑자",
+    # 금융·은행
+    "금융", "은행", "금융시장", "자본시장", "금융감독",
+    "중앙은행", "기준금리",
+    "대출", "여신", "수신", "부실대출",
+    "주식", "증시", "주가", "코스피", "나스닥",
+    "채권", "국채", "회사채",
+    "외환", "외화", "달러화", "위안화", "엔화",
+    # 기업·투자
+    "투자", "외국인투자", "직접투자", "fdi",
+    "인수합병", "m&a", "기업인수",
+    "상장", "ipo", "기업공개",
+    "파산", "부도", "채무불이행", "구조조정",
+    "관세", "제재", "무역협정", "fta",
+    "공급망", "반도체", "배터리", "전기차",
+    # 국제기구·정책
+    "imf", "세계은행", "아시아개발은행", "adb",
+    "g20", "oecd",
+    "통화정책", "재정정책", "경제정책", "규제",
+    # ESG·에너지
+    "esg", "탄소", "탄소중립", "넷제로",
+    "유가", "원유", "에너지",
+    "재생에너지", "태양광", "풍력",
+]
+
+# 한국어 기사에서 대상 국가를 인식하는 키워드
+KOREAN_COUNTRY_KEYWORDS: dict[str, list[str]] = {
+    "US": ["미국", "미 연준", "연준", "연방준비제도", "트럼프", "바이든", "재무부"],
+    "CN": ["중국", "위안화", "인민은행", "중국인민은행", "중국 경제"],
+    "JP": ["일본", "엔화", "일본은행", "엔 ", "BOJ"],
+    "IN": ["인도", "루피", "인도 경제", "인도중앙은행"],
+    "ID": ["인도네시아", "루피아", "인도네시아 중앙은행"],
+    "VN": ["베트남", "동화", "베트남 경제", "베트남 중앙은행"],
+    "KH": ["캄보디아", "캄보디아 경제"],
+    "MM": ["미얀마", "미얀마 경제"],
+    "KR": ["한국", "한국은행", "기재부", "금융위", "코스피", "원화"],
+}
+
+# ---------------------------------------------------------------------------
+# ④ 인도네시아어 금융·경제 키워드
 # ---------------------------------------------------------------------------
 INDONESIAN_FINANCE_KEYWORDS: list[str] = [
     "ekonomi", "keuangan", "moneter", "fiskal", "inflasi", "deflasi",
@@ -270,13 +320,13 @@ def _apply_keyword_filter(
     점수제 키워드 필터.
 
     점수 계산:
-      +3  FINANCE_KEYWORDS 히트 (통화·지수·중앙은행 포함, 첫 번째 매칭)
-      +1  COUNTRY_KEYWORDS 히트 (지명·인명 등 지리 신호, 국가당 1회)
-      -4  EXCLUSION_KEYWORDS 히트 (스포츠·연예, 첫 번째 매칭)
-      language='id'면 INDONESIAN_FINANCE_KEYWORDS도 적용 (+3)
+      +3  FINANCE_KEYWORDS / KOREAN_FINANCE_KEYWORDS 히트
+      +1  COUNTRY_KEYWORDS / KOREAN_COUNTRY_KEYWORDS 히트 (국가당 1회)
+      -4  EXCLUSION_KEYWORDS 히트
+      language='id' → INDONESIAN_FINANCE_KEYWORDS 추가 적용
+      language='ko' → KOREAN_FINANCE_KEYWORDS + KOREAN_COUNTRY_KEYWORDS 사용
+
     통과 기준: score >= PASS_THRESHOLD (= 2)
-      예) 금융KW(+3)만: 통과 / 지리KW 2개국(+2): 통과
-          지리KW 1개국(+1): 탈락 / 스포츠+지리(+1-4): 탈락
 
     Returns (decision, reason)
     """
@@ -289,33 +339,49 @@ def _apply_keyword_filter(
     if excl_hit:
         score += EXCLUSION_SCORE
 
-    # ── 금융·ESG 키워드 (+3) ─────────────────────────────────
-    fin_hit = _first_match(text, FINANCE_KEYWORDS)
-    if fin_hit:
-        score += FINANCE_SCORE
-        top_reason = f"finance:{fin_hit}"
-
-    # ── 인도네시아어 금융 키워드 (+3) ──────────────────────────
-    if language == "id":
-        id_hit = _first_match(text, INDONESIAN_FINANCE_KEYWORDS)
-        if id_hit:
+    if language == "ko":
+        # ── 한국어 금융 키워드 (+3) ───────────────────────────
+        fin_hit = _first_match(text, KOREAN_FINANCE_KEYWORDS)
+        if fin_hit:
             score += FINANCE_SCORE
-            if top_reason is None:
-                top_reason = f"id_finance:{id_hit}"
+            top_reason = f"ko_finance:{fin_hit}"
 
-    # ── 국가 키워드 (국가당 1회, +1) ────────────────────────────
-    # 지명/인명/정치인 등 순수 지리 신호
-    # 통화·지수·중앙은행은 이미 FINANCE_KEYWORDS에서 +3 처리됨
-    country_first: str | None = None
-    for country, kws in COUNTRY_KEYWORDS.items():
-        hit = _first_match(text, kws)
-        if hit:
-            score += COUNTRY_SCORE
-            if country_first is None:
-                country_first = f"country:{country}:{hit}"
+        # ── 한국어 국가 키워드 (국가당 1회, +1) ──────────────
+        country_first: str | None = None
+        for country, kws in KOREAN_COUNTRY_KEYWORDS.items():
+            hit = _first_match(text, kws)
+            if hit:
+                score += COUNTRY_SCORE
+                if country_first is None:
+                    country_first = f"country:{country}:{hit}"
+        if top_reason is None:
+            top_reason = country_first
 
-    if top_reason is None:
-        top_reason = country_first
+    else:
+        # ── 영문/기타 금융·ESG 키워드 (+3) ──────────────────
+        fin_hit = _first_match(text, FINANCE_KEYWORDS)
+        if fin_hit:
+            score += FINANCE_SCORE
+            top_reason = f"finance:{fin_hit}"
+
+        # ── 인도네시아어 금융 키워드 (+3) ────────────────────
+        if language == "id":
+            id_hit = _first_match(text, INDONESIAN_FINANCE_KEYWORDS)
+            if id_hit:
+                score += FINANCE_SCORE
+                if top_reason is None:
+                    top_reason = f"id_finance:{id_hit}"
+
+        # ── 국가 키워드 (국가당 1회, +1) ─────────────────────
+        country_first = None
+        for country, kws in COUNTRY_KEYWORDS.items():
+            hit = _first_match(text, kws)
+            if hit:
+                score += COUNTRY_SCORE
+                if country_first is None:
+                    country_first = f"country:{country}:{hit}"
+        if top_reason is None:
+            top_reason = country_first
 
     # ── 판정 ─────────────────────────────────────────────────
     if score >= PASS_THRESHOLD:
@@ -339,7 +405,7 @@ def run_keyword_filter(conn: sqlite3.Connection, refilter_all: bool = False) -> 
 
     where = "1=1" if refilter_all else "a.filter_decision = 'pending'"
     rows = cur.execute(f"""
-        SELECT a.article_id, a.title, a.summary, m.language
+        SELECT a.article_id, a.title, a.summary, m.language, m.tier
         FROM articles_raw a
         JOIN media_sources m ON m.source_id = a.source_id
         WHERE {where}
@@ -348,15 +414,21 @@ def run_keyword_filter(conn: sqlite3.Connection, refilter_all: bool = False) -> 
     stats = dict(total=len(rows), passed=0, rejected=0)
 
     for row in rows:
-        decision, reason = _apply_keyword_filter(
-            row["title"] or "", row["summary"] or "", row["language"] or "en"
-        )
+        # Tier 0 (공식 기관) → 키워드 필터 없이 자동 통과
+        if row["tier"] == 0:
+            decision, reason, stage = "passed", "official_source", 1
+        else:
+            decision, reason = _apply_keyword_filter(
+                row["title"] or "", row["summary"] or "", row["language"] or "en"
+            )
+            stage = 2
+
         stats[decision] += 1
         cur.execute(
             """UPDATE articles_raw
-               SET filter_stage = 2, filter_decision = ?, filter_reason = ?
+               SET filter_stage = ?, filter_decision = ?, filter_reason = ?
                WHERE article_id = ?""",
-            (decision, reason, row["article_id"]),
+            (stage, decision, reason, row["article_id"]),
         )
 
     conn.commit()
