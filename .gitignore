@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+env/
+
+# Data (DB는 용량이 크고 민감 데이터 포함 → 제외)
+data/*.db
+data/*.db-shm
+data/*.db-wal
+
+# 리포트 산출물 (재생성 가능)
+data/*.md
+data/*.json
+
+# 환경변수
+.env
+.env.*
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+identifier.sqlite
+
+# Claude Code 로컬 설정
+.claude/
+
+# 심볼릭 링크 (임시 데이터 디렉터리)
+data/glb-news-data
