@@ -209,7 +209,7 @@ if "sel_date"   not in st.session_state: st.session_state.sel_date   = yesterday
 # ── 헤더 ──────────────────────────────────────────────────────────────────────
 today_disp = datetime.now(timezone.utc).strftime("%Y. %-m. %-d.")
 st.html(f"""
-<div style="padding:14px 0 8px;display:flex;
+<div style="padding:14px 0 6px;display:flex;
             justify-content:space-between;align-items:center">
   <span style="font-size:1.35em;font-weight:700;color:#fff;letter-spacing:-0.5px">
     GLB News
@@ -218,7 +218,77 @@ st.html(f"""
 </div>
 """)
 
-# ── 국가 pill ─────────────────────────────────────────────────────────────────
+# ── Row 1: 뷰 타입 + 날짜 네비게이션 (최상단) ────────────────────────────────
+sel_date   = st.session_state.sel_date
+brief_type = st.session_state.brief_type
+
+is_realtime   = (brief_type == "realtime")
+daily_active  = (brief_type == "daily")
+weekly_active = (brief_type == "weekly")
+
+# [일일][1주][실시간] | [◀] [날짜] [▶]
+t1, t2, t3, gap, n1, n2, n3 = st.columns([1, 1, 1, 0.3, 1, 2, 1])
+
+with t1:
+    if st.button("일일", key="btn_daily", use_container_width=True,
+                 type="primary" if daily_active else "secondary"):
+        st.session_state.brief_type = "daily"
+        st.cache_data.clear()
+        st.rerun()
+
+with t2:
+    if st.button("1주", key="btn_weekly", use_container_width=True,
+                 type="primary" if weekly_active else "secondary"):
+        st.session_state.brief_type = "weekly"
+        st.cache_data.clear()
+        st.rerun()
+
+with t3:
+    if st.button("실시간", key="btn_realtime", use_container_width=True,
+                 type="primary" if is_realtime else "secondary"):
+        st.session_state.brief_type = "realtime"
+        st.cache_data.clear()
+        st.rerun()
+
+with n1:
+    if st.button("◀", key="btn_prev",
+                 use_container_width=True, disabled=is_realtime):
+        prev = date.fromisoformat(sel_date) - timedelta(days=1)
+        st.session_state.sel_date       = prev.isoformat()
+        st.session_state["date_picker"] = prev
+        st.cache_data.clear()
+        st.rerun()
+
+with n2:
+    if is_realtime:
+        st.html(
+            "<div style='text-align:center;padding:8px 0;"
+            "color:#30d158;font-size:0.82em;font-weight:600'>📡 실시간</div>"
+        )
+    else:
+        picked = st.date_input(
+            "날짜", value=date.fromisoformat(sel_date),
+            label_visibility="collapsed", key="date_picker"
+        )
+        picked_str = picked.isoformat()
+        if picked_str != sel_date:
+            st.session_state.sel_date = picked_str
+            st.cache_data.clear()
+            st.rerun()
+
+with n3:
+    if st.button("▶", key="btn_next",
+                 use_container_width=True, disabled=is_realtime):
+        nxt = date.fromisoformat(sel_date) + timedelta(days=1)
+        if nxt.isoformat() <= yesterday_str:
+            st.session_state.sel_date       = nxt.isoformat()
+            st.session_state["date_picker"] = nxt
+            st.cache_data.clear()
+            st.rerun()
+
+st.html("<div style='height:8px;border-top:1px solid #1c1c1e;margin-top:6px'></div>")
+
+# ── Row 2: 국가 pill ──────────────────────────────────────────────────────────
 sel = st.session_state.sel
 
 pill_cols = st.columns(len(COUNTRIES))
@@ -241,75 +311,6 @@ div[data-testid="stHorizontalBlock"] > div { padding:0 !important; }
 """, unsafe_allow_html=True)
 
 st.html("<div style='height:10px;border-top:1px solid #1c1c1e;margin-top:8px'></div>")
-
-# ── 날짜 네비게이션 + 브리핑 타입 ────────────────────────────────────────────
-sel_date   = st.session_state.sel_date
-brief_type = st.session_state.brief_type
-
-is_realtime   = (brief_type == "realtime")
-daily_active  = (brief_type == "daily")
-weekly_active = (brief_type == "weekly")
-
-nav_c1, nav_c2, nav_c3, nav_c4, nav_c5, nav_c6 = st.columns([1, 2, 1, 1, 1, 1])
-
-with nav_c1:
-    if st.button("◀ 이전", key="btn_prev",
-                 use_container_width=True, disabled=is_realtime):
-        prev = date.fromisoformat(sel_date) - timedelta(days=1)
-        st.session_state.sel_date     = prev.isoformat()
-        st.session_state["date_picker"] = prev   # date_input 위젯 동기화
-        st.cache_data.clear()
-        st.rerun()
-
-with nav_c2:
-    if is_realtime:
-        st.html(
-            "<div style='text-align:center;padding:8px 0;"
-            "color:#30d158;font-size:0.82em;font-weight:600'>📡 실시간</div>"
-        )
-    else:
-        picked = st.date_input(
-            "날짜", value=date.fromisoformat(sel_date),
-            label_visibility="collapsed", key="date_picker"
-        )
-        picked_str = picked.isoformat()
-        if picked_str != sel_date:
-            st.session_state.sel_date = picked_str
-            st.cache_data.clear()
-            st.rerun()
-
-with nav_c3:
-    if st.button("다음 ▶", key="btn_next",
-                 use_container_width=True, disabled=is_realtime):
-        nxt = date.fromisoformat(sel_date) + timedelta(days=1)
-        if nxt.isoformat() <= yesterday_str:
-            st.session_state.sel_date      = nxt.isoformat()
-            st.session_state["date_picker"] = nxt   # date_input 위젯 동기화
-            st.cache_data.clear()
-            st.rerun()
-
-with nav_c4:
-    if st.button("일일", key="btn_daily", use_container_width=True,
-                 type="primary" if daily_active else "secondary"):
-        st.session_state.brief_type = "daily"
-        st.cache_data.clear()
-        st.rerun()
-
-with nav_c5:
-    if st.button("주간", key="btn_weekly", use_container_width=True,
-                 type="primary" if weekly_active else "secondary"):
-        st.session_state.brief_type = "weekly"
-        st.cache_data.clear()
-        st.rerun()
-
-with nav_c6:
-    if st.button("실시간", key="btn_realtime", use_container_width=True,
-                 type="primary" if is_realtime else "secondary"):
-        st.session_state.brief_type = "realtime"
-        st.cache_data.clear()
-        st.rerun()
-
-st.html("<div style='height:6px;border-top:1px solid #1c1c1e;margin-top:6px'></div>")
 
 # ── 동향 브리핑 카드 ──────────────────────────────────────────────────────────
 if is_realtime:
