@@ -226,6 +226,15 @@ is_realtime   = (brief_type == "realtime")
 daily_active  = (brief_type == "daily")
 weekly_active = (brief_type == "weekly")
 
+# 1주 모드: sel_date를 해당 주 월요일로 스냅
+if weekly_active:
+    d = date.fromisoformat(sel_date)
+    monday = d - timedelta(days=d.weekday())
+    if monday.isoformat() != sel_date:
+        st.session_state.sel_date       = monday.isoformat()
+        st.session_state["date_picker"] = monday
+        sel_date = monday.isoformat()
+
 # [일일][1주][실시간] | [◀] [날짜] [▶]
 t1, t2, t3, gap, n1, n2, n3 = st.columns([1, 1, 1, 0.3, 1, 2, 1])
 
@@ -250,10 +259,12 @@ with t3:
         st.cache_data.clear()
         st.rerun()
 
+nav_step = timedelta(days=7) if weekly_active else timedelta(days=1)
+
 with n1:
     if st.button("◀", key="btn_prev",
                  use_container_width=True, disabled=is_realtime):
-        prev = date.fromisoformat(sel_date) - timedelta(days=1)
+        prev = date.fromisoformat(sel_date) - nav_step
         st.session_state.sel_date       = prev.isoformat()
         st.session_state["date_picker"] = prev
         st.cache_data.clear()
@@ -264,6 +275,15 @@ with n2:
         st.html(
             "<div style='text-align:center;padding:8px 0;"
             "color:#30d158;font-size:0.82em;font-weight:600'>📡 실시간</div>"
+        )
+    elif weekly_active:
+        # 주간: 월~일 범위 표시
+        mon = date.fromisoformat(sel_date)
+        sun = mon + timedelta(days=6)
+        week_label = f"{mon.strftime('%-m/%-d')}(월) ~ {sun.strftime('%-m/%-d')}(일)"
+        st.html(
+            f"<div style='text-align:center;padding:8px 0;"
+            f"color:#ebebf5;font-size:0.80em;font-weight:500'>{week_label}</div>"
         )
     else:
         picked = st.date_input(
@@ -279,8 +299,10 @@ with n2:
 with n3:
     if st.button("▶", key="btn_next",
                  use_container_width=True, disabled=is_realtime):
-        nxt = date.fromisoformat(sel_date) + timedelta(days=1)
-        if nxt.isoformat() <= yesterday_str:
+        nxt = date.fromisoformat(sel_date) + nav_step
+        # 주간: 다음 주 월요일이 어제보다 이전이어야 이동 가능
+        limit = yesterday_str
+        if nxt.isoformat() <= limit:
             st.session_state.sel_date       = nxt.isoformat()
             st.session_state["date_picker"] = nxt
             st.cache_data.clear()

@@ -19,7 +19,7 @@ import os
 import re
 import sqlite3
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import date as _date, datetime, timedelta, timezone
 
 import anthropic
 
@@ -65,6 +65,18 @@ issues는 반드시 3-5개 포함. 각 detail은 최소 3문장 이상.
 # ---------------------------------------------------------------------------
 # DB 마이그레이션
 # ---------------------------------------------------------------------------
+def _week_monday(date_str: str) -> str:
+    """날짜가 속한 주의 월요일 반환 (YYYY-MM-DD)."""
+    d = _date.fromisoformat(date_str)
+    return (d - timedelta(days=d.weekday())).strftime("%Y-%m-%d")
+
+def _week_sunday(date_str: str) -> str:
+    """날짜가 속한 주의 일요일 반환 (YYYY-MM-DD)."""
+    d = _date.fromisoformat(date_str)
+    monday = d - timedelta(days=d.weekday())
+    return (monday + timedelta(days=6)).strftime("%Y-%m-%d")
+
+
 def ensure_briefings_schema(conn: sqlite3.Connection) -> None:
     """country_briefings 테이블을 날짜·타입별 히스토리 구조로 마이그레이션."""
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(country_briefings)")}
@@ -182,13 +194,13 @@ def run_briefing(
         date_filter = f"AND DATE(COALESCE(a.published_at, a.fetched_at)) = '{briefing_date}'"
         min_articles = 2
     else:
-        # 주간: briefing_date 기준 최근 7일
-        n_days = days if days else 7
+        # 주간: briefing_date가 속한 주의 월요일~일요일
+        week_mon = _week_monday(briefing_date)
+        week_sun = _week_sunday(briefing_date)
+        briefing_date = week_mon   # DB 저장 키를 월요일로 통일
         date_filter = (
-            f"AND COALESCE(a.published_at, a.fetched_at) "
-            f">= datetime('{briefing_date}', '-{n_days - 1} days') "
-            f"AND COALESCE(a.published_at, a.fetched_at) "
-            f"<= datetime('{briefing_date}', '+1 day')"
+            f"AND DATE(COALESCE(a.published_at, a.fetched_at)) >= '{week_mon}' "
+            f"AND DATE(COALESCE(a.published_at, a.fetched_at)) <= '{week_sun}'"
         )
         min_articles = 3
 
@@ -201,7 +213,10 @@ def run_briefing(
         targets = [r[0] for r in rows]
 
     stats = {"total": len(targets), "done": 0, "skipped": 0}
-    type_label = "일일" if briefing_type == "daily" else "주간"
+    if briefing_type == "daily":
+        type_label = f"일일/{briefing_date}"
+    else:
+        type_label = f"주간/{briefing_date}({_week_sunday(briefing_date)}까지)"
 
     for cc in targets:
         articles = conn.execute(f"""
