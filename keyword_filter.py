@@ -1,18 +1,27 @@
 """
-glb-news-rss 2단계 키워드 필터 (v2 — 점수제 + 네거티브 필터)
+glb-news-rss 2단계 키워드 필터 (v3 — 제목/본문 분리 점수 + 중복 제거)
 
-점수 체계:
-  +3  금융·경제·ESG 키워드 1개 히트
-  +1  9개 대상국 키워드 1개 히트 (국가당 최초 1회)
-  -4  스포츠·연예·순수과학 제외 키워드 1개 히트
+점수 체계 (v3):
+  제목 금융 키워드 히트: +5   (본문보다 1.6배 가중)
+  본문 금융 키워드 히트: +3
+  제목 국가 키워드 히트: +2   (국가당 1회)
+  본문 국가 키워드 히트: +1   (국가당 1회)
+  제외 키워드 히트:      -4   (전문 대상)
   ──────────────────────────────────────────
-  ≥ 3  passed   (금융 키워드 1개만 있어도 통과)
-  < 3  rejected  (국가 키워드만 1-2개는 탈락,
-                  스포츠 + 국가는 마이너스로 탈락)
+  ≥ 3  passed   (금융 키워드 1개 단독으로 통과)
+  < 3  rejected  (단순 국가 언급만으로는 통과 불가)
 
-filter_stage  : 0=미처리 | 2=키워드필터완료 | 3=LLM(미구현)
+v2→v3 변경사항:
+  - 제목/본문 분리 채점 → 제목 히트에 가중치 부여
+  - PASS_THRESHOLD 2 → 3 (국가 키워드 1개만으로는 통과 불가)
+  - run_dedup() 추가: 동일 이슈 중복 기사 탐지 및 표시
+  - filter_score 컬럼 저장 (디버깅·분석용)
+
+filter_stage  : 0=미처리 | 2=키워드필터완료
 filter_decision: 'pending' | 'passed' | 'rejected'
 filter_reason  : 통과·거부 주요 근거 문자열
+filter_score   : 키워드 합산 점수
+duplicate_of   : 중복인 경우 원본 article_id, NULL이면 독립 기사
 """
 from __future__ import annotations
 
@@ -21,22 +30,29 @@ import logging
 import re
 import sqlite3
 from datetime import datetime, timezone
+from difflib import SequenceMatcher
 
 log = logging.getLogger("keyword_filter")
 
 # ---------------------------------------------------------------------------
-# 점수 상수
+# 점수 상수 (v3)
 # ---------------------------------------------------------------------------
-FINANCE_SCORE    =  3   # 금융·ESG 키워드 히트당
-COUNTRY_SCORE    =  1   # 국가 키워드 히트당 (국가당 1회)
-EXCLUSION_SCORE  = -4   # 스포츠·연예 제외 키워드 히트당
-PASS_THRESHOLD   =  2   # ≥2 이면 passed
-                         # 금융 키워드 1개(+3) 단독 통과
-                         # 서로 다른 두 나라 언급(+1+1) 통과
-                         # 통화·지수 등 금융 국가 KW(+3) 단독 통과
+FINANCE_SCORE_TITLE  =  5   # 금융·ESG 키워드가 제목에서 히트
+FINANCE_SCORE_BODY   =  3   # 금융·ESG 키워드가 본문에서 히트
+COUNTRY_SCORE_TITLE  =  2   # 국가 키워드가 제목에서 히트 (국가당 1회)
+COUNTRY_SCORE_BODY   =  1   # 국가 키워드가 본문에서 히트 (국가당 1회)
+EXCLUSION_SCORE      = -4   # 스포츠·연예 제외 키워드 히트당
+PASS_THRESHOLD       =  3   # ≥3 이면 passed
+
+# 중복 탐지
+DEDUP_THRESHOLD      = 0.60  # 제목 유사도 임계값 (SequenceMatcher ratio)
+
+# 레거시 호환 (report 등에서 참조)
+FINANCE_SCORE  = FINANCE_SCORE_BODY
+COUNTRY_SCORE  = COUNTRY_SCORE_BODY
 
 # ---------------------------------------------------------------------------
-# 글로벌 카테고리 코드 (레거시 — 리포트용)
+# 글로벌 카테고리 코드 (리포트용)
 # ---------------------------------------------------------------------------
 GLOBAL_CATEGORIES = ("GLOBAL_GENERAL", "GLOBAL_ECONOMY")
 
@@ -73,7 +89,7 @@ FINANCE_KEYWORDS: list[str] = [
     "supply chain", "export", "import", "current account",
     # 국제기구·고위직
     "imf", "world bank", "adb", "asian development bank",
-    "wto", "g20", "g7", "oecd",
+    "wto", "g20", "g7", "oecd", "bis", "bank for international settlements",
     "finance minister", "minister of finance", "treasury minister",
     "central bank governor", "finance secretary",
     # 통화 (국가 귀속 통화를 금융 신호로 처리)
@@ -81,7 +97,7 @@ FINANCE_KEYWORDS: list[str] = [
     "rupee", "inr", "rupiah", "idr",
     "dong", "vnd", "riel", "khr", "kyat", "mmk",
     "us dollar", "usd",
-    # 주요 주가지수·거래소 (3자 약어 제외 — 부분매칭 오탐 방지)
+    # 주요 주가지수·거래소
     "nikkei", "topix", "sensex", "nifty", "kospi", "kosdaq", "ihsg",
     "nasdaq", "s&p 500", "dow jones",
     # 중앙은행·금융감독 (약어)
@@ -194,7 +210,7 @@ KOREAN_FINANCE_KEYWORDS: list[str] = [
     "관세", "제재", "무역협정", "fta",
     "공급망", "반도체", "배터리", "전기차",
     # 국제기구·정책
-    "imf", "세계은행", "아시아개발은행", "adb",
+    "imf", "세계은행", "아시아개발은행", "adb", "bis",
     "g20", "oecd",
     "통화정책", "재정정책", "경제정책", "규제",
     # ESG·에너지
@@ -203,7 +219,6 @@ KOREAN_FINANCE_KEYWORDS: list[str] = [
     "재생에너지", "태양광", "풍력",
 ]
 
-# 한국어 기사에서 대상 국가를 인식하는 키워드
 KOREAN_COUNTRY_KEYWORDS: dict[str, list[str]] = {
     "US": ["미국", "미 연준", "연준", "연방준비제도", "트럼프", "바이든", "재무부"],
     "CN": ["중국", "위안화", "인민은행", "중국인민은행", "중국 경제"],
@@ -232,11 +247,9 @@ INDONESIAN_FINANCE_KEYWORDS: list[str] = [
 ]
 
 # ---------------------------------------------------------------------------
-# ④ 제외 키워드 — 스포츠·연예·순수과학 (고신뢰 비금융 신호)
-#    하나라도 히트 → -4점 (금융 키워드 없으면 탈락)
+# ⑤ 제외 키워드 — 스포츠·연예·순수과학
 # ---------------------------------------------------------------------------
 EXCLUSION_KEYWORDS: list[str] = [
-    # 스포츠 경기·선수·결과
     "gold medal", "silver medal", "bronze medal",
     "powerlifter", "weightlift",
     "sea games", "asian games",
@@ -245,18 +258,16 @@ EXCLUSION_KEYWORDS: list[str] = [
     "sumo",
     "tennis match", "cricket match", "badminton match",
     "chess tournament", "chess championship",
-    # 연예·미디어
     "box office", "music festival", "concert tour", "music album",
     "grammy award", "academy award", "film festival",
     "chart-topping", "chart topping",
-    # 부고·인물
     "dies at", "passed away", "in memoriam", "obituary",
     "saxophonist", "violinist", "pianist", "conductor",
-    # 순수 자연과학
     "deep-sea", "new species", "newly discovered species",
     "paleontolog", "fossil discover",
     "marine biolog",
 ]
+
 
 # ---------------------------------------------------------------------------
 # DB 마이그레이션
@@ -270,6 +281,8 @@ def ensure_filter_columns(conn: sqlite3.Connection) -> None:
          "ALTER TABLE articles_raw ADD COLUMN filter_decision TEXT    NOT NULL DEFAULT 'pending'"),
         ("filter_reason",
          "ALTER TABLE articles_raw ADD COLUMN filter_reason   TEXT"),
+        ("filter_score",
+         "ALTER TABLE articles_raw ADD COLUMN filter_score    INTEGER"),
     ]
     added = []
     for col, sql in migrations:
@@ -280,6 +293,17 @@ def ensure_filter_columns(conn: sqlite3.Connection) -> None:
         conn.commit()
         log.info("마이그레이션 완료: articles_raw 컬럼 추가 %s", added)
 
+
+def ensure_dedup_column(conn: sqlite3.Connection) -> None:
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(articles_raw)")}
+    if "duplicate_of" not in existing:
+        conn.execute(
+            "ALTER TABLE articles_raw ADD COLUMN duplicate_of INTEGER REFERENCES articles_raw(article_id)"
+        )
+        conn.commit()
+        log.info("마이그레이션 완료: duplicate_of 컬럼 추가")
+
+
 # ---------------------------------------------------------------------------
 # 텍스트 정제 헬퍼
 # ---------------------------------------------------------------------------
@@ -288,108 +312,133 @@ def _normalize(text: str) -> str:
 
 
 def _clean_text(raw: str) -> str:
-    """
-    Google News RSS 텍스트 정제:
-    ① HTML 태그 제거
-    ② HTML 엔티티 디코딩 (&nbsp; 등)
-    ③ 제목/요약 끝 '- 출처명' 또는 '  출처명' 패턴 제거
-    """
     text = _html.unescape(raw or "")
     text = re.sub(r"<[^>]+>", " ", text)
     text = re.sub(r"\xa0+", " ", text)
-    # " - Source Name" 패턴 (양쪽 공백 필수 → "US-China" 같은 복합어 보호)
     text = re.sub(r"\s+-\s+[A-Za-z][\w\s]{1,60}$", "", text)
-    # "  Source Name" 패턴 (2칸 이상 공백 + 대문자 시작)
     text = re.sub(r"\s{2,}[A-Z][A-Za-z][\w\s]{1,60}$", "", text)
     return text.strip()
 
 
+_PATTERN_CACHE: dict[str, re.Pattern] = {}
+
+
+def _kw_pattern(kw: str) -> re.Pattern:
+    """키워드 패턴 (캐시). 순수 알파벳+숫자+공백 키워드는 단어 경계 적용.
+    예: 'bis' → ibis/Bisnis 에서 오탐 방지, 'rbi' → Serbia/Gabriel 오탐 방지.
+    특수문자 포함 키워드(m&a, s&p 등)는 기존 부분문자열 매칭 유지.
+    """
+    if kw not in _PATTERN_CACHE:
+        if re.fullmatch(r"[a-z0-9 ]+", kw):
+            _PATTERN_CACHE[kw] = re.compile(
+                r"(?<![a-z0-9])" + re.escape(kw) + r"(?![a-z0-9])"
+            )
+        else:
+            _PATTERN_CACHE[kw] = re.compile(re.escape(kw))
+    return _PATTERN_CACHE[kw]
+
+
 def _first_match(haystack: str, keywords: list[str]) -> str | None:
     for kw in keywords:
-        if kw in haystack:
+        if _kw_pattern(kw).search(haystack):
             return kw
     return None
 
+
 # ---------------------------------------------------------------------------
-# 핵심 필터 함수 — 점수제 + 네거티브
+# 핵심 필터 함수 — 제목/본문 분리 점수제 (v3)
 # ---------------------------------------------------------------------------
 def _apply_keyword_filter(
     title: str, summary: str, language: str = "en"
-) -> tuple[str, str]:
+) -> tuple[str, str, int]:
     """
-    점수제 키워드 필터.
+    제목/본문 분리 점수제 키워드 필터.
 
-    점수 계산:
-      +3  FINANCE_KEYWORDS / KOREAN_FINANCE_KEYWORDS 히트
-      +1  COUNTRY_KEYWORDS / KOREAN_COUNTRY_KEYWORDS 히트 (국가당 1회)
-      -4  EXCLUSION_KEYWORDS 히트
-      language='id' → INDONESIAN_FINANCE_KEYWORDS 추가 적용
-      language='ko' → KOREAN_FINANCE_KEYWORDS + KOREAN_COUNTRY_KEYWORDS 사용
-
-    통과 기준: score >= PASS_THRESHOLD (= 2)
-
-    Returns (decision, reason)
+    Returns:
+        (decision, reason, score)
+        decision: 'passed' | 'rejected'
+        reason:   주요 매칭 근거 문자열
+        score:    합산 점수 (디버깅용)
     """
-    text = _normalize(f"{_clean_text(title)} {_clean_text(summary)}")
+    title_text = _normalize(_clean_text(title))
+    body_text  = _normalize(_clean_text(summary))
+    full_text  = f"{title_text} {body_text}"
+
     score = 0
     top_reason: str | None = None
 
-    # ── 제외 키워드 먼저 확인 ────────────────────────────────
-    excl_hit = _first_match(text, EXCLUSION_KEYWORDS)
+    # ── 제외 키워드 (전체 텍스트 대상) ──────────────────────
+    excl_hit = _first_match(full_text, EXCLUSION_KEYWORDS)
     if excl_hit:
         score += EXCLUSION_SCORE
 
     if language == "ko":
-        # ── 한국어 금융 키워드 (+3) ───────────────────────────
-        fin_hit = _first_match(text, KOREAN_FINANCE_KEYWORDS)
-        if fin_hit:
-            score += FINANCE_SCORE
-            top_reason = f"ko_finance:{fin_hit}"
+        # ── 한국어 금융 키워드 ────────────────────────────────
+        fin_t = _first_match(title_text, KOREAN_FINANCE_KEYWORDS)
+        if fin_t:
+            score += FINANCE_SCORE_TITLE
+            top_reason = f"ko_fin_title:{fin_t}"
+        else:
+            fin_b = _first_match(body_text, KOREAN_FINANCE_KEYWORDS)
+            if fin_b:
+                score += FINANCE_SCORE_BODY
+                top_reason = f"ko_fin_body:{fin_b}"
 
-        # ── 한국어 국가 키워드 (국가당 1회, +1) ──────────────
-        country_first: str | None = None
+        # ── 한국어 국가 키워드 (국가당 1회) ──────────────────
         for country, kws in KOREAN_COUNTRY_KEYWORDS.items():
-            hit = _first_match(text, kws)
-            if hit:
-                score += COUNTRY_SCORE
-                if country_first is None:
-                    country_first = f"country:{country}:{hit}"
-        if top_reason is None:
-            top_reason = country_first
+            if _first_match(title_text, kws):
+                score += COUNTRY_SCORE_TITLE
+                if top_reason is None:
+                    top_reason = f"country_title:{country}"
+            elif _first_match(body_text, kws):
+                score += COUNTRY_SCORE_BODY
+                if top_reason is None:
+                    top_reason = f"country_body:{country}"
 
     else:
-        # ── 영문/기타 금융·ESG 키워드 (+3) ──────────────────
-        fin_hit = _first_match(text, FINANCE_KEYWORDS)
-        if fin_hit:
-            score += FINANCE_SCORE
-            top_reason = f"finance:{fin_hit}"
+        # ── 영문/기타 금융 키워드 ─────────────────────────────
+        fin_t = _first_match(title_text, FINANCE_KEYWORDS)
+        if fin_t:
+            score += FINANCE_SCORE_TITLE
+            top_reason = f"fin_title:{fin_t}"
+        else:
+            fin_b = _first_match(body_text, FINANCE_KEYWORDS)
+            if fin_b:
+                score += FINANCE_SCORE_BODY
+                top_reason = f"fin_body:{fin_b}"
 
-        # ── 인도네시아어 금융 키워드 (+3) ────────────────────
+        # ── 인도네시아어 금융 키워드 ──────────────────────────
         if language == "id":
-            id_hit = _first_match(text, INDONESIAN_FINANCE_KEYWORDS)
-            if id_hit:
-                score += FINANCE_SCORE
+            id_t = _first_match(title_text, INDONESIAN_FINANCE_KEYWORDS)
+            if id_t:
+                score += FINANCE_SCORE_TITLE
                 if top_reason is None:
-                    top_reason = f"id_finance:{id_hit}"
+                    top_reason = f"id_fin_title:{id_t}"
+            else:
+                id_b = _first_match(body_text, INDONESIAN_FINANCE_KEYWORDS)
+                if id_b:
+                    score += FINANCE_SCORE_BODY
+                    if top_reason is None:
+                        top_reason = f"id_fin_body:{id_b}"
 
-        # ── 국가 키워드 (국가당 1회, +1) ─────────────────────
-        country_first = None
+        # ── 국가 키워드 (국가당 1회) ──────────────────────────
         for country, kws in COUNTRY_KEYWORDS.items():
-            hit = _first_match(text, kws)
-            if hit:
-                score += COUNTRY_SCORE
-                if country_first is None:
-                    country_first = f"country:{country}:{hit}"
-        if top_reason is None:
-            top_reason = country_first
+            if _first_match(title_text, kws):
+                score += COUNTRY_SCORE_TITLE
+                if top_reason is None:
+                    top_reason = f"country_title:{country}"
+            elif _first_match(body_text, kws):
+                score += COUNTRY_SCORE_BODY
+                if top_reason is None:
+                    top_reason = f"country_body:{country}"
 
     # ── 판정 ─────────────────────────────────────────────────
     if score >= PASS_THRESHOLD:
-        return "passed", top_reason or "passed"
+        return "passed", top_reason or "passed", score
     else:
         if excl_hit:
-            return "rejected", f"excl:{excl_hit}(score:{score})"
-        return "rejected", f"score:{score}|{top_reason or 'no_match'}"
+            return "rejected", f"excl:{excl_hit}(score:{score})", score
+        return "rejected", f"score:{score}|{top_reason or 'no_match'}", score
 
 
 # ---------------------------------------------------------------------------
@@ -414,11 +463,11 @@ def run_keyword_filter(conn: sqlite3.Connection, refilter_all: bool = False) -> 
     stats = dict(total=len(rows), passed=0, rejected=0)
 
     for row in rows:
-        # Tier 0 (공식 기관) → 키워드 필터 없이 자동 통과
         if row["tier"] == 0:
-            decision, reason, stage = "passed", "official_source", 1
+            # Tier 0 공식기관 → 자동 통과 (레거시 데이터 호환)
+            decision, reason, score, stage = "passed", "official_source", 99, 1
         else:
-            decision, reason = _apply_keyword_filter(
+            decision, reason, score = _apply_keyword_filter(
                 row["title"] or "", row["summary"] or "", row["language"] or "en"
             )
             stage = 2
@@ -426,9 +475,9 @@ def run_keyword_filter(conn: sqlite3.Connection, refilter_all: bool = False) -> 
         stats[decision] += 1
         cur.execute(
             """UPDATE articles_raw
-               SET filter_stage = ?, filter_decision = ?, filter_reason = ?
+               SET filter_stage = ?, filter_decision = ?, filter_reason = ?, filter_score = ?
                WHERE article_id = ?""",
-            (stage, decision, reason, row["article_id"]),
+            (stage, decision, reason, score, row["article_id"]),
         )
 
     conn.commit()
@@ -438,6 +487,93 @@ def run_keyword_filter(conn: sqlite3.Connection, refilter_all: bool = False) -> 
         stats["passed"] / stats["total"] * 100 if stats["total"] else 0,
     )
     return stats
+
+
+# ---------------------------------------------------------------------------
+# 중복 기사 탐지 및 표시 (v3 신규)
+# ---------------------------------------------------------------------------
+def _title_similarity(a: str, b: str) -> float:
+    """제목 유사도 (SequenceMatcher ratio, 0~1)."""
+    a_n = re.sub(r"[^a-z0-9 ]", "", a.lower()).strip()
+    b_n = re.sub(r"[^a-z0-9 ]", "", b.lower()).strip()
+    if not a_n or not b_n:
+        return 0.0
+    return SequenceMatcher(None, a_n, b_n).ratio()
+
+
+def run_dedup(conn: sqlite3.Connection, recheck: bool = False) -> dict:
+    """
+    같은 날짜·국가의 유사 제목 기사를 중복으로 표시 (duplicate_of 설정).
+
+    동작:
+      1. passed 기사를 (국가, 발행일) 그룹으로 묶음
+      2. 그룹 내 제목 유사도 ≥ DEDUP_THRESHOLD 이면 중복 판정
+      3. Tier 낮은(=품질 높은) 쪽을 원본으로 유지, 나머지에 duplicate_of 설정
+      4. 중복 기사는 AI 랭킹 대상에서 제외됨
+
+    recheck=True : duplicate_of가 이미 설정된 기사도 재처리
+
+    Returns:
+        {"checked": N, "duplicates": M}
+    """
+    ensure_dedup_column(conn)
+
+    cond = "" if recheck else "AND a.duplicate_of IS NULL"
+    rows = conn.execute(f"""
+        SELECT a.article_id, a.title,
+               COALESCE(SUBSTR(a.published_at, 1, 10), SUBSTR(a.fetched_at, 1, 10)) AS art_date,
+               m.primary_country_code AS cc,
+               m.tier
+        FROM articles_raw a
+        JOIN media_sources m ON m.source_id = a.source_id
+        WHERE a.filter_decision = 'passed'
+          AND a.title IS NOT NULL
+          {cond}
+        ORDER BY m.tier ASC, a.published_at DESC NULLS LAST
+    """).fetchall()
+
+    # (cc, date) 별로 그룹화
+    from collections import defaultdict
+    groups: dict[tuple, list[dict]] = defaultdict(list)
+    for r in rows:
+        key = (r["cc"] or "GLOBAL", r["art_date"] or "unknown")
+        groups[key].append(dict(r))
+
+    total_checked = len(rows)
+    dup_count = 0
+    cur = conn.cursor()
+
+    for (cc, date), articles in groups.items():
+        if len(articles) < 2:
+            continue
+
+        # 이미 그룹 내 순서가 품질 순 (tier ASC → Tier0 먼저, 그다음 1, 2)
+        # in-place 중복 표시
+        marked: list[bool] = [False] * len(articles)
+
+        for i in range(len(articles)):
+            if marked[i]:
+                continue
+            primary = articles[i]
+            for j in range(i + 1, len(articles)):
+                if marked[j]:
+                    continue
+                sim = _title_similarity(primary["title"], articles[j]["title"])
+                if sim >= DEDUP_THRESHOLD:
+                    marked[j] = True
+                    cur.execute(
+                        "UPDATE articles_raw SET duplicate_of = ? WHERE article_id = ?",
+                        (primary["article_id"], articles[j]["article_id"]),
+                    )
+                    dup_count += 1
+
+    conn.commit()
+    log.info(
+        "중복 탐지 완료 — 검사=%d건  중복표시=%d건  (%.1f%%)",
+        total_checked, dup_count,
+        dup_count / total_checked * 100 if total_checked else 0,
+    )
+    return {"checked": total_checked, "duplicates": dup_count}
 
 
 # ---------------------------------------------------------------------------
@@ -452,6 +588,12 @@ def build_filter_report(conn: sqlite3.Connection) -> str:
                SUM(CASE WHEN filter_decision='rejected' THEN 1 ELSE 0 END) AS rejected,
                SUM(CASE WHEN filter_decision='pending'  THEN 1 ELSE 0 END) AS pending
         FROM articles_raw
+    """).fetchone()
+
+    dup_stats = conn.execute("""
+        SELECT COUNT(*) AS total_dups
+        FROM articles_raw
+        WHERE duplicate_of IS NOT NULL
     """).fetchone()
 
     placeholders = ",".join("?" * len(GLOBAL_CATEGORIES))
@@ -471,7 +613,8 @@ def build_filter_report(conn: sqlite3.Connection) -> str:
         SELECT m.primary_country_code AS country,
                COUNT(*) AS total,
                SUM(CASE WHEN a.filter_decision='passed'   THEN 1 ELSE 0 END) AS passed,
-               SUM(CASE WHEN a.filter_decision='rejected' THEN 1 ELSE 0 END) AS rejected
+               SUM(CASE WHEN a.filter_decision='rejected' THEN 1 ELSE 0 END) AS rejected,
+               SUM(CASE WHEN a.duplicate_of IS NOT NULL   THEN 1 ELSE 0 END) AS dups
         FROM articles_raw a
         JOIN media_sources m ON m.source_id = a.source_id
         GROUP BY m.primary_country_code
@@ -487,7 +630,6 @@ def build_filter_report(conn: sqlite3.Connection) -> str:
         LIMIT 20
     """).fetchall()
 
-    # 제외 키워드로 거부된 기사 TOP 10
     excl_hits = conn.execute("""
         SELECT filter_reason, COUNT(*) AS cnt
         FROM articles_raw
@@ -511,16 +653,18 @@ def build_filter_report(conn: sqlite3.Connection) -> str:
 
     ts = datetime.now(timezone.utc).isoformat()
     lines = [
-        "# 2단계 키워드 필터 결과 (v2 — 점수제)",
+        "# 2단계 키워드 필터 결과 (v3 — 제목/본문 분리 점수)",
         "",
         f"_생성 시각: {ts}_",
         "",
-        "## 점수 체계",
+        "## 점수 체계 (v3)",
         "",
         "| 신호 | 점수 |",
         "|---|---|",
-        f"| 금융·ESG 키워드 히트 | +{FINANCE_SCORE} |",
-        f"| 국가 키워드 히트 (국가당 1회) | +{COUNTRY_SCORE} |",
+        f"| 금융·ESG 키워드 — 제목 히트 | +{FINANCE_SCORE_TITLE} |",
+        f"| 금융·ESG 키워드 — 본문 히트 | +{FINANCE_SCORE_BODY} |",
+        f"| 국가 키워드 — 제목 히트 (국가당 1회) | +{COUNTRY_SCORE_TITLE} |",
+        f"| 국가 키워드 — 본문 히트 (국가당 1회) | +{COUNTRY_SCORE_BODY} |",
         f"| 스포츠·연예 제외 키워드 히트 | {EXCLUSION_SCORE} |",
         f"| **통과 기준** | **≥ {PASS_THRESHOLD}** |",
         "",
@@ -532,6 +676,7 @@ def build_filter_report(conn: sqlite3.Connection) -> str:
         f"| ✅ 통과 (passed) | {tot['passed']:,} | {pct(tot['passed'], tot['total'])} |",
         f"| ❌ 거부 (rejected) | {tot['rejected']:,} | {pct(tot['rejected'], tot['total'])} |",
         f"| ⏳ 미처리 (pending) | {tot['pending']:,} | {pct(tot['pending'], tot['total'])} |",
+        f"| 🔁 중복 표시 | {dup_stats['total_dups']:,} | - |",
         "",
         "## 글로벌 매체 키워드 필터 상세",
         "",
@@ -543,13 +688,13 @@ def build_filter_report(conn: sqlite3.Connection) -> str:
         "",
         "## 국가별 수집·필터 현황",
         "",
-        "| 국가 | 수집 | 통과 | 거부 | 통과율 |",
-        "|---|---|---|---|---|",
+        "| 국가 | 수집 | 통과 | 거부 | 중복 | 통과율 |",
+        "|---|---|---|---|---|---|",
     ]
     for r in country_rows:
         lines.append(
             f"| {r['country']} | {r['total']:,} | {r['passed']:,} | "
-            f"{r['rejected']:,} | {pct(r['passed'], r['total'])} |"
+            f"{r['rejected']:,} | {r['dups']:,} | {pct(r['passed'], r['total'])} |"
         )
 
     lines += [

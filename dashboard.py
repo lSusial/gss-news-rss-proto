@@ -2,11 +2,16 @@
 glb-news-rss 대시보드 — 국가별 주요 뉴스
 실행: streamlit run dashboard.py
 """
+import html as _html
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
 import streamlit as st
+
+def _e(text: str) -> str:
+    """HTML 삽입 전 특수문자 이스케이프 (XSS·렌더링 오류 방지)."""
+    return _html.escape(str(text or ""))
 
 DB_PATH = Path(__file__).parent / "data" / "news.db"
 
@@ -20,7 +25,6 @@ COUNTRIES = [
     ("🇻🇳", "VN",     "베트남"),
     ("🇰🇭", "KH",     "캄보디아"),
     ("🇲🇲", "MM",     "미얀마"),
-    ("🇰🇷", "KR",     "한국 시각"),
 ]
 
 RANK_COLORS = ["#ff4b4b", "#ff8c00", "#ffd700", "#4fc3f7", "#4fc3f7",
@@ -231,31 +235,28 @@ for tab, (flag, code, name) in zip(tabs, COUNTRIES):
             st.caption("중앙은행·금융감독기관의 공식 발표 (필터 자동 통과)")
             for art in official_arts:
                 pub   = fmt_date(art["published_at"])
-                title = art["title"] or "(제목 없음)"
-                link  = art["link"]  or "#"
-                media = art["media_name"] or ""
+                title = _e(art["title"] or "(제목 없음)")
+                href  = _e(art["link"]  or "#")
+                media = _e(art["media_name"] or "")
                 badge = score_badge(art.get("ai_score"))
-                sumko = art.get("summary_ko") or ""
-                st.markdown(
-                    f"""
-                    <div style="
-                        padding:12px 16px; margin-bottom:8px;
-                        background:#0d2b1a; border-radius:8px;
-                        border-left:4px solid #1a6b3c;
-                    ">
-                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-                            {official_badge()}
-                            {"" if not badge else badge}
-                            <span style="color:#888;font-size:0.78em">🏛 {media} &nbsp;·&nbsp; 🕐 {pub}</span>
-                        </div>
-                        <a href="{link}" target="_blank" style="
-                            font-size:1.0em;font-weight:600;color:#a8d8b9;
-                            text-decoration:none;line-height:1.4;display:block;margin-bottom:4px
-                        ">{title}</a>
-                        {"<div style='color:#7fb99a;font-size:0.85em;line-height:1.5;padding:6px 8px;background:#071a0e;border-radius:4px'>" + sumko + "</div>" if sumko else ""}
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
+                sumko = _e(art.get("summary_ko") or "")
+                sumko_html = (
+                    f"<div style='color:#7fb99a;font-size:0.85em;line-height:1.5;"
+                    f"padding:6px 8px;background:#071a0e;border-radius:4px;margin-top:4px'>{sumko}</div>"
+                ) if sumko else ""
+                st.html(
+                    f"<div style='padding:12px 16px;margin-bottom:8px;background:#0d2b1a;"
+                    f"border-radius:8px;border-left:4px solid #1a6b3c;'>"
+                    f"<div style='display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap'>"
+                    f"<span style='background:#1a6b3c;color:#fff;font-size:0.70em;padding:2px 7px;"
+                    f"border-radius:10px;font-weight:700'>🏛 공식</span>"
+                    f"{badge}"
+                    f"<span style='color:#888;font-size:0.78em'>📌 {media} · 🕐 {pub}</span>"
+                    f"</div>"
+                    f"<a href='{href}' target='_blank' style='font-size:1.0em;font-weight:600;"
+                    f"color:#a8d8b9;text-decoration:none;line-height:1.4;display:block'>{title}</a>"
+                    f"{sumko_html}"
+                    f"</div>"
                 )
             st.divider()
 
@@ -268,36 +269,34 @@ for tab, (flag, code, name) in zip(tabs, COUNTRIES):
 
             for i, art in enumerate(ai_articles, 1):
                 pub    = fmt_date(art["published_at"])
-                title  = art["title"] or "(제목 없음)"
-                link   = art["link"]  or "#"
-                media  = art["media_name"] or ""
+                title  = _e(art["title"] or "(제목 없음)")
+                href   = _e(art["link"]  or "#")
+                media  = _e(art["media_name"] or "")
                 score  = art["ai_score"]
-                sumko  = art["summary_ko"] or ""
+                sumko  = _e(art["summary_ko"] or "")
                 color  = RANK_COLORS[i - 1]
                 badge  = score_badge(score)
-                offbdg = official_badge() if art.get("tier") == 0 else ""
-
-                st.markdown(
-                    f"""
-                    <div style="
-                        padding:14px 18px; margin-bottom:10px;
-                        background:#16213e; border-radius:10px;
-                        border-left:5px solid {color};
-                    ">
-                        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
-                            <span style="font-size:1.2em;font-weight:900;color:{color};min-width:24px">{i}</span>
-                            {offbdg}
-                            {badge}
-                            <span style="color:#888;font-size:0.78em">📌 {media} &nbsp;·&nbsp; 🕐 {pub}</span>
-                        </div>
-                        <a href="{link}" target="_blank" style="
-                            font-size:1.03em;font-weight:600;color:#dce8ff;
-                            text-decoration:none;line-height:1.45;display:block;margin-bottom:6px
-                        ">{title}</a>
-                        {"<div style='color:#b0c4de;font-size:0.88em;line-height:1.5;padding:8px 10px;background:#0d1b2a;border-radius:6px'>" + sumko + "</div>" if sumko else ""}
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
+                offbdg = (
+                    "<span style='background:#1a6b3c;color:#fff;font-size:0.70em;"
+                    "padding:2px 7px;border-radius:10px;font-weight:700'>🏛 공식</span>"
+                ) if art.get("tier") == 0 else ""
+                sumko_html = (
+                    f"<div style='color:#b0c4de;font-size:0.88em;line-height:1.5;"
+                    f"padding:8px 10px;background:#0d1b2a;border-radius:6px;margin-top:6px'>{sumko}</div>"
+                ) if sumko else ""
+                st.html(
+                    f"<div style='padding:14px 18px;margin-bottom:10px;background:#16213e;"
+                    f"border-radius:10px;border-left:5px solid {color};'>"
+                    f"<div style='display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap'>"
+                    f"<span style='font-size:1.2em;font-weight:900;color:{color};min-width:24px'>{i}</span>"
+                    f"{offbdg}"
+                    f"{badge}"
+                    f"<span style='color:#888;font-size:0.78em'>📌 {media} · 🕐 {pub}</span>"
+                    f"</div>"
+                    f"<a href='{href}' target='_blank' style='font-size:1.03em;font-weight:600;"
+                    f"color:#dce8ff;text-decoration:none;line-height:1.45;display:block'>{title}</a>"
+                    f"{sumko_html}"
+                    f"</div>"
                 )
 
         else:
@@ -324,24 +323,23 @@ for tab, (flag, code, name) in zip(tabs, COUNTRIES):
             else:
                 for art in all_articles:
                     pub   = fmt_date(art["published_at"])
-                    title = art["title"] or ""
-                    link  = art["link"]  or "#"
-                    media = art["media_name"] or ""
+                    title = _e(art["title"] or "")
+                    href  = _e(art["link"]  or "#")
+                    media = _e(art["media_name"] or "")
                     badge = score_badge(art.get("ai_score"))
-                    offbdg = official_badge() if art.get("tier") == 0 else ""
-
-                    st.markdown(
-                        f"**[{title}]({link})**  \n"
-                        f"<span style='color:#888;font-size:0.82em'>"
-                        f"📌 {media} &nbsp;·&nbsp; 🕐 {pub}"
-                        f"</span>"
-                        + (f" &nbsp;{offbdg}" if offbdg else "")
-                        + (f" &nbsp;{badge}" if badge else ""),
-                        unsafe_allow_html=True,
-                    )
-                    st.markdown(
-                        "<hr style='margin:6px 0;border-color:#2a2a2a'>",
-                        unsafe_allow_html=True,
+                    offbdg = (
+                        "<span style='background:#1a6b3c;color:#fff;font-size:0.68em;"
+                        "padding:1px 5px;border-radius:8px;font-weight:700'>🏛</span> "
+                    ) if art.get("tier") == 0 else ""
+                    st.html(
+                        f"<div style='margin-bottom:2px'>"
+                        f"<a href='{href}' target='_blank' style='font-weight:600;"
+                        f"color:#dce8ff;text-decoration:none;line-height:1.5'>{title}</a>"
+                        f"</div>"
+                        f"<div style='color:#888;font-size:0.82em;margin-bottom:4px'>"
+                        f"📌 {media} · 🕐 {pub} {offbdg}{badge}"
+                        f"</div>"
+                        f"<hr style='margin:6px 0;border:0;border-top:1px solid #2a2a2a'>"
                     )
 
         with col_src:
@@ -353,10 +351,6 @@ for tab, (flag, code, name) in zip(tabs, COUNTRIES):
                 r    = p / t * 100 if t else 0
                 tier = s["tier"]
                 prefix = "🏛 " if tier == 0 else ""
-                st.markdown(
-                    f"**{prefix}{s['media_name']}**  \n"
-                    f"<span style='color:#888;font-size:0.8em'>"
-                    f"{p:,}건 / {t:,}건 ({r:.0f}%)</span>",
-                    unsafe_allow_html=True,
-                )
+                st.markdown(f"**{prefix}{_e(s['media_name'])}**")
+                st.caption(f"{p:,}건 / {t:,}건 ({r:.0f}%)")
                 st.progress(min(r / 100, 1.0))

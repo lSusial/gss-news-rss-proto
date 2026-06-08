@@ -685,9 +685,9 @@ sources:
         url: https://news.google.com/rss/search?q=site:business-standard.com+economy+when:1d&hl=en-US&gl=US&ceid=US:en
 
   # ============================================================
-  # 공식 기관 Tier 0 — 중앙은행·금융감독기관
-  # keyword_filter에서 자동 통과 (filter_stage=1, reason=official_source)
-  # AI 분석 우선 대상
+  # 공식 기관 Tier 0 — 수집 비활성화 (active: false)
+  # RSS 품질 문제(노이즈·로그인 페이지·환율공시 등)로 수집 중단.
+  # 기존 DB 데이터는 유지. 재활성화 시 active: true로 변경 후 init 실행.
   # ============================================================
 
   # --- 미국 ---
@@ -695,9 +695,9 @@ sources:
     country: US
     language: en
     tier: 0
+    active: false
     categories: [US, OFFICIAL]
     feeds:
-      # 공식 RSS 직접 지원 (통화정책 보도자료)
       - section: monetary_policy
         url: https://www.federalreserve.gov/feeds/press_monetary.xml
 
@@ -706,6 +706,7 @@ sources:
     country: JP
     language: en
     tier: 0
+    active: false
     categories: [JP, OFFICIAL]
     feeds:
       - section: press_releases
@@ -716,26 +717,29 @@ sources:
     country: IN
     language: en
     tier: 0
+    active: false
     categories: [IN, OFFICIAL]
     feeds:
       - section: press_releases
-        url: https://news.google.com/rss/search?q=site:rbi.org.in+when:7d&hl=en-US&gl=US&ceid=US:en
+        url: https://news.google.com/rss/search?q=site:rbi.org.in+(monetary+policy+OR+rate+OR+inflation+OR+regulation+OR+circular)+when:7d&hl=en-US&gl=US&ceid=US:en
 
   # --- 인도네시아 ---
   - media_name: Bank Indonesia (Official)
     country: ID
     language: en
     tier: 0
+    active: false
     categories: [ID, OFFICIAL]
     feeds:
       - section: press_releases
-        url: https://news.google.com/rss/search?q=site:bi.go.id+when:7d&hl=en-US&gl=US&ceid=US:en
+        url: https://news.google.com/rss/search?q=site:bi.go.id+(monetary+OR+rate+OR+inflation+OR+policy+OR+rupiah)+when:7d&hl=en-US&gl=US&ceid=US:en
 
   # --- 베트남 ---
   - media_name: State Bank of Vietnam (Official)
     country: VN
     language: en
     tier: 0
+    active: false
     categories: [VN, OFFICIAL]
     feeds:
       - section: press_releases
@@ -746,6 +750,7 @@ sources:
     country: KH
     language: en
     tier: 0
+    active: false
     categories: [KH, OFFICIAL]
     feeds:
       - section: press_releases
@@ -756,83 +761,20 @@ sources:
     country: CN
     language: en
     tier: 0
+    active: false
     categories: [CN, OFFICIAL]
     feeds:
       - section: press_releases
         url: https://news.google.com/rss/search?q=site:pbc.gov.cn+when:7d&hl=en-US&gl=US&ceid=US:en
 
   # ============================================================
-  # 한국 주요 언론 Tier 1 — 국제 금융·경제 한국 시각
-  # ============================================================
-  - media_name: 연합뉴스
-    country: KR
-    language: ko
-    tier: 1
-    categories: [KR]
-    feeds:
-      - section: top
-        url: https://www.yna.co.kr/rss/news.xml
-      - section: economy
-        url: https://www.yna.co.kr/rss/economy.xml
-
-  - media_name: 한국경제
-    country: KR
-    language: ko
-    tier: 1
-    categories: [KR]
-    feeds:
-      - section: top
-        url: https://www.hankyung.com/feed/all-news
-      - section: economy
-        url: https://www.hankyung.com/feed/economy
-
-  - media_name: 매일경제
-    country: KR
-    language: ko
-    tier: 1
-    categories: [KR]
-    feeds:
-      - section: top
-        url: https://www.mk.co.kr/rss/40300001/
-      - section: economy
-        url: https://www.mk.co.kr/rss/30000001/
-
-  - media_name: 동아일보
-    country: KR
-    language: ko
-    tier: 1
-    categories: [KR]
-    feeds:
-      - section: top
-        url: https://rss.donga.com/total.xml
-      - section: economy
-        url: https://rss.donga.com/economy.xml
-
-  - media_name: 조선일보
-    country: KR
-    language: ko
-    tier: 1
-    categories: [KR]
-    feeds:
-      - section: top
-        url: https://www.chosun.com/arc/outboundfeeds/rss/?outputType=xml
-
-  - media_name: 중앙일보
-    country: KR
-    language: ko
-    tier: 1
-    categories: [KR]
-    feeds:
-      - section: top
-        url: https://news.google.com/rss/search?q=site:joongang.co.kr+when:1d&hl=ko&gl=KR&ceid=KR:ko
-
-  # ============================================================
-  # 한국 공식 기관 Tier 0 — 국내 금융·경제 정책 모니터링
+  # 한국 공식 기관 Tier 0 — 수집 비활성화
   # ============================================================
   - media_name: 한국은행 (Official)
     country: KR
     language: ko
     tier: 0
+    active: false
     categories: [KR, OFFICIAL]
     feeds:
       - section: press_releases
@@ -842,6 +784,7 @@ sources:
     country: KR
     language: ko
     tier: 0
+    active: false
     categories: [KR, OFFICIAL]
     feeds:
       - section: press_releases
@@ -851,7 +794,54 @@ sources:
     country: KR
     language: ko
     tier: 0
+    active: false
     categories: [KR, OFFICIAL]
     feeds:
       - section: press_releases
         url: https://news.google.com/rss/search?q=site:fsc.go.kr+when:7d&hl=ko&gl=KR&ceid=KR:ko
+
+  # ============================================================
+  # 국제기구 (4): IMF, World Bank, ADB, BIS
+  # 금융기관 해외사업 담당자가 최우선 참고하는 공신력 있는 자료.
+  # when:7d — 보고서·성명은 일별이 아닌 주별로 발행
+  # ============================================================
+  - media_name: IMF
+    country: GLOBAL
+    language: en
+    tier: 1
+    categories: [GLOBAL_ECONOMY]
+    feeds:
+      # 보도자료·성명 키워드 한정 (단순 웹페이지 노이즈 방지)
+      - section: news
+        url: https://news.google.com/rss/search?q=site:imf.org+(report+OR+statement+OR+outlook+OR+policy+OR+debt)+when:7d&hl=en-US&gl=US&ceid=US:en
+
+  - media_name: World Bank
+    country: GLOBAL
+    language: en
+    tier: 1
+    categories: [GLOBAL_ECONOMY]
+    feeds:
+      - section: news
+        url: https://news.google.com/rss/search?q=site:worldbank.org+(report+OR+outlook+OR+economy+OR+growth+OR+development)+when:7d&hl=en-US&gl=US&ceid=US:en
+
+  - media_name: ADB
+    country: GLOBAL
+    language: en
+    tier: 1
+    categories: [GLOBAL_ECONOMY]
+    feeds:
+      # 아시아개발은행 — 동남아 대상 대출·보고서 핵심 소스
+      - section: news
+        url: https://news.google.com/rss/search?q=site:adb.org+(report+OR+outlook+OR+loan+OR+finance+OR+economy)+when:7d&hl=en-US&gl=US&ceid=US:en
+
+  - media_name: BIS
+    country: GLOBAL
+    language: en
+    tier: 1
+    categories: [GLOBAL_ECONOMY]
+    feeds:
+      # 국제결제은행 — 중앙은행·통화정책 분석 핵심 자료
+      - section: speeches
+        url: https://www.bis.org/rss/bis_speeches.xml
+      - section: press
+        url: https://www.bis.org/rss/bis_press.xml

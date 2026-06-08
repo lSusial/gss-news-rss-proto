@@ -1,13 +1,22 @@
 """
 glb-news-rss CLI
 
-사용법:
-  python main.py init                        # DB 생성 + sources.yaml 동기화
-  python main.py fetch                       # 전체 활성 피드 1회 수집
-  python main.py filter [--refilter]         # 키워드 필터 실행
-  python main.py ai-rank                     # AI 중요도 분석 (전체, 국가당 50건)
+파이프라인 전체 실행 순서:
+  python main.py init          # 최초 1회: DB 생성 + sources.yaml 동기화
+  python main.py fetch         # 피드 수집
+  python main.py filter        # 키워드 필터 (제목/본문 분리 점수)
+  python main.py dedup         # 중복 기사 클러스터링
+  python main.py llm-filter    # LLM 1차 관문 (Haiku, 비관련 기사 제거)
+  python main.py ai-rank       # AI 중요도 분석 (Haiku, 1-5점 + 한글 요약)
+  python main.py brief         # 국가별 동향 브리핑 (Sonnet)
+
+개별 커맨드:
+  python main.py filter --refilter           # 전체 기사 재필터링
+  python main.py dedup --recheck             # 중복 재탐지
+  python main.py llm-filter --country IN     # 인도만
   python main.py ai-rank --country KH        # 캄보디아만
   python main.py ai-rank --limit 30          # 국가당 30건
+  python main.py brief --country US --days 7 # 미국 7일치
   python main.py report                      # 매체 가용성 리포트
   python main.py list --limit 20             # 최근 수집 기사 출력
   python main.py export articles.json        # 전체 기사 JSON 덤프
@@ -23,7 +32,9 @@ from pathlib import Path
 
 import collector
 import keyword_filter
+import llm_prefilter
 import llm_ranker
+import briefing
 
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = ROOT / "data"
@@ -82,8 +93,8 @@ def cmd_list(args):
 
 
 def cmd_filter(args):
-    """2단계 키워드 필터 실행.
-    --refilter : 전체 기사 재처리 (키워드 사전 변경 후 사용)
+    """2단계 키워드 필터 실행 (v3 — 제목/본문 분리 점수).
+    --refilter : 전체 기사 재처리 (키워드·점수 기준 변경 후 사용)
     """
     conn = _open()
     refilter = getattr(args, "refilter", False)
@@ -96,6 +107,37 @@ def cmd_filter(args):
         return
     p, r = stats["passed"], stats["rejected"]
     print(f"[filter] 처리={t:,}건  통과={p:,}건({p/t*100:.1f}%)  거부={r:,}건({r/t*100:.1f}%)")
+
+
+def cmd_dedup(args):
+    """중복 기사 클러스터링 — 같은 날짜·국가의 유사 제목 기사를 duplicate_of로 표시."""
+    conn = _open()
+    recheck = getattr(args, "recheck", False)
+    keyword_filter.ensure_dedup_column(conn)
+    stats = keyword_filter.run_dedup(conn, recheck=recheck)
+    c, d = stats["checked"], stats["duplicates"]
+    if c == 0:
+        print("[dedup] 처리할 기사 없음")
+        return
+    print(f"[dedup] 검사={c:,}건  중복표시={d:,}건({d/c*100:.1f}%)  → AI 랭킹 제외 예정")
+
+
+def cmd_llm_filter(args):
+    """LLM 1차 관문 — 키워드 통과 기사 중 비관련 기사를 Haiku로 제거."""
+    import os
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        print("❌ 환경변수 ANTHROPIC_API_KEY를 설정하세요.", file=sys.stderr)
+        sys.exit(1)
+    conn = _open()
+    country = getattr(args, "country", None) or None
+    limit   = getattr(args, "limit", 500)
+    stats = llm_prefilter.run_llm_prefilter(conn, country_code=country, limit=limit)
+    t = stats["total"]
+    if t == 0:
+        print("[llm-filter] 처리할 기사 없음")
+        return
+    p, r = stats["passed"], stats["rejected"]
+    print(f"[llm-filter] 대상={t:,}건  통과={p:,}건({p/t*100:.1f}%)  거부={r:,}건({r/t*100:.1f}%)")
 
 
 def cmd_filter_report(_args):
@@ -124,6 +166,19 @@ def cmd_ai_rank(args):
         return
     a, s = stats["analyzed"], stats["skipped"]
     print(f"[ai-rank] 대상={t:,}건  완료={a:,}건  실패={s:,}건")
+
+
+def cmd_brief(args):
+    """국가별 동향 브리핑 생성 (ANTHROPIC_API_KEY 필요)."""
+    import os
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        print("❌ 환경변수 ANTHROPIC_API_KEY를 설정하세요.", file=sys.stderr)
+        sys.exit(1)
+    conn  = _open()
+    country = getattr(args, "country", None) or None
+    days    = getattr(args, "days", 3)
+    stats = briefing.run_briefing(conn, country_code=country, days=days)
+    print(f"[brief] 국가={stats['total']}  완료={stats['done']}  건너뜀={stats['skipped']}")
 
 
 def cmd_export(args):
@@ -162,15 +217,29 @@ def main():
     air = sub.add_parser("ai-rank",  help="AI 중요도 분석 및 한글 요약 (ANTHROPIC_API_KEY 필요)")
     air.add_argument("--country", type=str, default=None, help="국가 코드 (예: KH, US, CN)")
     air.add_argument("--limit",   type=int, default=50,   help="국가당 분석 건수 (기본 50)")
+    brf = sub.add_parser("brief", help="국가별 동향 브리핑 생성 (ANTHROPIC_API_KEY 필요)")
+    brf.add_argument("--country", type=str, default=None, help="국가 코드 (예: US, IN)")
+    brf.add_argument("--days",    type=int, default=3,    help="분석 기간(일, 기본 3)")
     lst = sub.add_parser("list", help="최근 수집 기사 출력")
     lst.add_argument("--limit", type=int, default=20)
     exp = sub.add_parser("export", help="JSON 덤프")
     exp.add_argument("output", type=str)
 
+    # ── dedup ──────────────────────────────────────────────────
+    ded = sub.add_parser("dedup", help="중복 기사 클러스터링 (AI 랭킹 전 실행 권장)")
+    ded.add_argument("--recheck", action="store_true",
+                     help="이미 표시된 중복 포함 전체 재탐지")
+
+    # ── llm-filter ─────────────────────────────────────────────
+    llf = sub.add_parser("llm-filter", help="LLM 1차 관문 (Haiku, 비관련 기사 제거)")
+    llf.add_argument("--country", type=str, default=None, help="국가 코드 (예: IN, ID)")
+    llf.add_argument("--limit",   type=int, default=500,  help="처리 최대 건수 (기본 500)")
+
     args = p.parse_args()
     {"init": cmd_init, "fetch": cmd_fetch, "report": cmd_report,
      "filter": cmd_filter, "filter-report": cmd_filter_report,
-     "ai-rank": cmd_ai_rank,
+     "dedup": cmd_dedup, "llm-filter": cmd_llm_filter,
+     "ai-rank": cmd_ai_rank, "brief": cmd_brief,
      "list": cmd_list, "export": cmd_export}[args.cmd](args)
 
 

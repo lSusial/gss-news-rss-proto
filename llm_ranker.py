@@ -34,6 +34,25 @@ MODEL        = "claude-haiku-4-5-20251001"
 BATCH_SIZE   = 10   # API 1회 호출당 기사 수
 RATE_DELAY   = 0.5  # 호출 간 대기(초) — rate limit 방지
 
+# Tier 0 공식소스에서도 걸러낼 무의미 제목 패턴
+_NOISE_TITLES = {
+    "foreign exchange rates", "exchange rates", "login", "bank indonesia",
+    "reserve bank of india", "- rbi", "rbi", "bi", "home", "main page",
+    "sitemap", "contact", "about",
+}
+
+def _is_noise_title(title: str) -> bool:
+    """짧거나 무의미한 제목이면 True (환율공시, 로그인 페이지 등)."""
+    t = (title or "").strip().lower()
+    if len(t) < 12:
+        return True
+    if t in _NOISE_TITLES:
+        return True
+    # "foreign exchange rates - bank indonesia" 등 패턴
+    if any(noise in t for noise in ("foreign exchange rate", "login -", "- login")):
+        return True
+    return False
+
 # ---------------------------------------------------------------------------
 # DB 마이그레이션
 # ---------------------------------------------------------------------------
@@ -132,7 +151,7 @@ def run_ai_ranking(
     params.append(limit_per_country)
 
     # 국가별 최신 limit_per_country 건, ai_score 없는 것
-    # Tier 0 (공식기관) 기사를 먼저 처리 (ORDER BY m.tier ASC)
+    # 중복 기사(duplicate_of IS NOT NULL) 및 LLM 관문 거부 기사 제외
     if country_code:
         rows = conn.execute(f"""
             SELECT a.article_id, a.title, a.summary, m.primary_country_code AS cc
@@ -140,6 +159,8 @@ def run_ai_ranking(
             JOIN media_sources m ON m.source_id = a.source_id
             WHERE a.filter_decision = 'passed'
               AND a.ai_score IS NULL
+              AND a.duplicate_of IS NULL
+              AND (a.llm_prefilter IS NULL OR a.llm_prefilter = 'passed')
               {where_cc}
             ORDER BY m.tier ASC, a.published_at DESC NULLS LAST, a.fetched_at DESC
             LIMIT ?
@@ -157,6 +178,8 @@ def run_ai_ranking(
                 JOIN media_sources m ON m.source_id = a.source_id
                 WHERE a.filter_decision = 'passed'
                   AND a.ai_score IS NULL
+                  AND a.duplicate_of IS NULL
+                  AND (a.llm_prefilter IS NULL OR a.llm_prefilter = 'passed')
                   AND m.primary_country_code = ?
                 ORDER BY m.tier ASC, a.published_at DESC NULLS LAST, a.fetched_at DESC
                 LIMIT ?
@@ -164,6 +187,26 @@ def run_ai_ranking(
             all_rows.extend(batch)
         rows = all_rows
 
+    # 노이즈 제목 사전 제거 (Tier 0 환율공시·로그인 페이지 등)
+    clean_rows = []
+    noise_ids  = []
+    for r in rows:
+        if _is_noise_title(r["title"]):
+            noise_ids.append(r["article_id"])
+        else:
+            clean_rows.append(r)
+
+    if noise_ids:
+        cur = conn.cursor()
+        for aid in noise_ids:
+            cur.execute(
+                "UPDATE articles_raw SET ai_score=1, summary_ko='[자동제외: 무의미 제목]', ai_model=? WHERE article_id=?",
+                (MODEL, aid),
+            )
+        conn.commit()
+        log.info("노이즈 제목 자동 제외: %d건", len(noise_ids))
+
+    rows = clean_rows
     stats = dict(total=len(rows), analyzed=0, skipped=0)
     if not rows:
         log.info("분석할 기사 없음 (이미 처리됨 or 통과 기사 없음)")

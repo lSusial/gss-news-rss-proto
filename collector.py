@@ -73,6 +73,9 @@ def sync_sources(conn: sqlite3.Connection, sources_yaml: Path) -> None:
 
     cur = conn.cursor()
     for src in data["sources"]:
+        # active: false 로 표시된 소스는 피드 비활성화만 처리 (DB 레코드 유지)
+        is_active_source = src.get("active", True)
+
         cur.execute(
             """
             INSERT INTO media_sources (media_name, primary_country_code, language, tier)
@@ -95,6 +98,15 @@ def sync_sources(conn: sqlite3.Connection, sources_yaml: Path) -> None:
                 "INSERT INTO media_category_map (source_id, category_code) VALUES (?, ?)",
                 (source_id, cat),
             )
+
+        # 소스가 비활성(active: false)이면 모든 피드를 비활성화하고 건너뜀
+        if not is_active_source:
+            cur.execute(
+                "UPDATE media_source_feeds SET is_active = 0 WHERE source_id = ?",
+                (source_id,),
+            )
+            log.debug("비활성 소스 건너뜀: %s", src["media_name"])
+            continue
 
         # 피드 upsert
         current_urls = {feed["url"] for feed in src.get("feeds", [])}
