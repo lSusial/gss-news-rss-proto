@@ -248,6 +248,7 @@ with t1:
     if st.button("일일", key="btn_daily", use_container_width=True,
                  type="primary" if daily_active else "secondary"):
         st.session_state.brief_type = "daily"
+        st.session_state.sel_date   = yesterday_str   # 항상 전날로 이동
         st.cache_data.clear()
         st.rerun()
 
