@@ -479,10 +479,12 @@ if brief and brief.get("summary"):
         f"</div>"
     )
 
-# ── 뉴스 리스트 ───────────────────────────────────────────────────────────────
-# 실시간: 오늘 기사 / 날짜 선택: 해당 날짜 기사
-feed_date = today_str if is_realtime else sel_date
-articles  = load_feed(sel, sel_date=feed_date, limit=40)
+# ── 뉴스 리스트 (주간 모드는 브리핑만, 뉴스 목록 불필요) ─────────────────────
+if weekly_active:
+    articles = []
+else:
+    feed_date = today_str if is_realtime else sel_date
+    articles  = load_feed(sel, sel_date=feed_date, limit=40)
 
 if not articles:
     st.html("""
