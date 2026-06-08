@@ -19,7 +19,7 @@ import os
 import re
 import sqlite3
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import anthropic
 
@@ -173,7 +173,8 @@ def run_briefing(
     client = anthropic.Anthropic(api_key=api_key)
 
     if briefing_date is None:
-        briefing_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        # 기본값: 어제 — 새벽 실행 시 전날 기사를 기준으로 브리핑 생성
+        briefing_date = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
 
     # 날짜 필터 구성
     if briefing_type == "daily":

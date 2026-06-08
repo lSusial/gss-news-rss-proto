@@ -1,14 +1,17 @@
 """
 glb-news-rss CLI
 
-파이프라인 전체 실행 순서:
-  python main.py init          # 최초 1회: DB 생성 + sources.yaml 동기화
-  python main.py fetch         # 피드 수집
-  python main.py filter        # 키워드 필터 (제목/본문 분리 점수)
-  python main.py dedup         # 중복 기사 클러스터링
-  python main.py llm-filter    # LLM 1차 관문 (Haiku, 비관련 기사 제거)
-  python main.py ai-rank       # AI 중요도 분석 (Haiku, 1-5점 + 한글 요약)
-  python main.py brief         # 국가별 동향 브리핑 (Sonnet)
+매일 새벽 파이프라인 (전날 기사 기준 브리핑 생성):
+  python main.py fetch                    # 피드 수집 (전날 밤~새벽 기사)
+  python main.py filter                   # 키워드 필터
+  python main.py dedup                    # 중복 기사 클러스터링
+  python main.py llm-filter               # LLM 1차 관문 (비관련 기사 제거)
+  python main.py ai-rank                  # AI 중요도 분석 (1-5점 + 한글 요약)
+  python main.py brief --type daily       # 일일 브리핑 (어제 기사 기준, 기본값)
+  python main.py brief --type weekly      # 주간 브리핑 (어제 기준 7일치)
+
+초기화 (최초 1회):
+  python main.py init          # DB 생성 + sources.yaml 동기화
 
 개별 커맨드:
   python main.py filter --refilter           # 전체 기사 재필터링

@@ -223,23 +223,19 @@ sel = st.session_state.sel
 pill_cols = st.columns(len(COUNTRIES))
 for col, (flag, code, name) in zip(pill_cols, COUNTRIES):
     with col:
-        if st.button(f"{flag}\n{name}", key=f"p_{code}", use_container_width=True):
+        btn_type = "primary" if code == sel else "secondary"
+        if st.button(f"{flag}\n{name}", key=f"p_{code}",
+                     use_container_width=True, type=btn_type):
             st.session_state.sel = code
             st.cache_data.clear()
             st.rerun()
 
-sel_idx = [c[1] for c in COUNTRIES].index(sel) + 1
-st.markdown(f"""
+st.markdown("""
 <style>
-div[data-testid="stHorizontalBlock"] > div:nth-child({sel_idx})
-  > div > div > div > button {{
-    background:#fff !important; color:#000 !important;
-    border-color:#fff !important; font-weight:600 !important;
-}}
-div[data-testid="stHorizontalBlock"] {{
+div[data-testid="stHorizontalBlock"] {
   gap:6px !important; margin-bottom:0 !important;
-}}
-div[data-testid="stHorizontalBlock"] > div {{ padding:0 !important; }}
+}
+div[data-testid="stHorizontalBlock"] > div { padding:0 !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -277,34 +273,22 @@ with nav_c3:
             st.cache_data.clear()
             st.rerun()
 
+daily_active  = (brief_type == "daily")
+weekly_active = (brief_type == "weekly")
+
 with nav_c4:
-    daily_active = (brief_type == "daily")
-    if st.button("일일" if not daily_active else "✓ 일일",
-                 key="btn_daily", use_container_width=True):
+    if st.button("일일", key="btn_daily", use_container_width=True,
+                 type="primary" if daily_active else "secondary"):
         st.session_state.brief_type = "daily"
         st.cache_data.clear()
         st.rerun()
 
 with nav_c5:
-    weekly_active = (brief_type == "weekly")
-    if st.button("주간" if not weekly_active else "✓ 주간",
-                 key="btn_weekly", use_container_width=True):
+    if st.button("주간", key="btn_weekly", use_container_width=True,
+                 type="primary" if weekly_active else "secondary"):
         st.session_state.brief_type = "weekly"
         st.cache_data.clear()
         st.rerun()
-
-# 선택된 타입 버튼 강조
-daily_css = (
-    "div[data-testid='stHorizontalBlock']:last-of-type > div:nth-child(4)"
-    " > div > div > div > button {"
-    "background:#0a84ff !important;color:#fff !important;border-color:#0a84ff !important;}"
-) if daily_active else ""
-weekly_css = (
-    "div[data-testid='stHorizontalBlock']:last-of-type > div:nth-child(5)"
-    " > div > div > div > button {"
-    "background:#0a84ff !important;color:#fff !important;border-color:#0a84ff !important;}"
-) if weekly_active else ""
-st.markdown(f"<style>{daily_css}{weekly_css}</style>", unsafe_allow_html=True)
 
 st.html("<div style='height:6px;border-top:1px solid #1c1c1e;margin-top:6px'></div>")
 
