@@ -12,14 +12,16 @@ build/
 venv/
 env/
 
-# Data (DB는 용량이 크고 민감 데이터 포함 → 제외)
-data/*.db
+# DB WAL 임시 파일만 제외 (DB 본체는 포함)
 data/*.db-shm
 data/*.db-wal
 
 # 리포트 산출물 (재생성 가능)
 data/*.md
 data/*.json
+
+# HTML 스냅샷 (export_html.py로 재생성 가능)
+data/html/
 
 # 환경변수
 .env

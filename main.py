@@ -174,6 +174,23 @@ def cmd_ai_rank(args):
     print(f"[ai-rank] 대상={t:,}건  완료={a:,}건  실패={s:,}건")
 
 
+def cmd_retag(args):
+    """기존 분석 기사에 토픽 태그 추가 (ANTHROPIC_API_KEY 필요)."""
+    import os
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        print("❌ 환경변수 ANTHROPIC_API_KEY를 설정하세요.", file=sys.stderr)
+        sys.exit(1)
+    conn    = _open()
+    days    = getattr(args, "days", 7)
+    country = getattr(args, "country", None) or None
+    stats   = llm_ranker.run_ai_tagging(conn, days=days, country_code=country)
+    t = stats["total"]
+    if t == 0:
+        print("[retag] 태깅할 기사 없음")
+        return
+    print(f"[retag] 대상={t:,}건  태깅={stats['tagged']:,}건  실패={stats['skipped']:,}건")
+
+
 def cmd_brief(args):
     """국가별 동향 브리핑 생성 (ANTHROPIC_API_KEY 필요)."""
     import os
@@ -257,11 +274,16 @@ def main():
     llf.add_argument("--country", type=str, default=None, help="국가 코드 (예: IN, ID)")
     llf.add_argument("--limit",   type=int, default=500,  help="처리 최대 건수 (기본 500)")
 
+    # ── retag ──────────────────────────────────────────────────
+    rtg = sub.add_parser("retag", help="기존 분석 기사에 토픽 태그 추가")
+    rtg.add_argument("--days",    type=int, default=7,   help="최근 N일 기사 (기본 7)")
+    rtg.add_argument("--country", type=str, default=None, help="국가 코드")
+
     args = p.parse_args()
     {"init": cmd_init, "fetch": cmd_fetch, "report": cmd_report,
      "filter": cmd_filter, "filter-report": cmd_filter_report,
      "dedup": cmd_dedup, "llm-filter": cmd_llm_filter,
-     "ai-rank": cmd_ai_rank, "brief": cmd_brief,
+     "ai-rank": cmd_ai_rank, "retag": cmd_retag, "brief": cmd_brief,
      "list": cmd_list, "export": cmd_export}[args.cmd](args)
 
 

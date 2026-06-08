@@ -21,7 +21,7 @@ import logging
 import os
 import sqlite3
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import anthropic
@@ -62,6 +62,7 @@ def ensure_ai_columns(conn: sqlite3.Connection) -> None:
         ("ai_score",   "ALTER TABLE articles_raw ADD COLUMN ai_score   INTEGER"),
         ("summary_ko", "ALTER TABLE articles_raw ADD COLUMN summary_ko TEXT"),
         ("ai_model",   "ALTER TABLE articles_raw ADD COLUMN ai_model   TEXT"),
+        ("topics",     "ALTER TABLE articles_raw ADD COLUMN topics      TEXT"),
     ]
     added = []
     for col, sql in cols:
@@ -86,8 +87,13 @@ SYSTEM_PROMPT = """\
 - score 2: 낮은 관련성 (간접적 경제 언급)
 - score 1: 금융·경제와 거의 무관
 
+topics 기준 (3-5개, 한국어, 10자 이내):
+- 구체적인 경제·금융 주제어 (예: "금리인상", "BOJ통화정책", "달러강세", "OPEC증산")
+- 기업명·지수명 포함 가능 (예: "SpaceXIPO", "닛케이급락", "루피아약세")
+- 일반적인 단어 지양 (예: "경제", "금융", "뉴스" 사용 금지)
+
 응답 형식 (JSON 배열만, 설명 없음):
-[{"id":1,"score":4,"summary_ko":"핵심 내용 1-2문장"},...]
+[{"id":1,"score":4,"summary_ko":"핵심 내용 1-2문장","topics":["금리인상","BOJ","엔화약세"]},...]
 """
 
 def _build_user_message(articles: list[dict]) -> str:
@@ -227,13 +233,14 @@ def run_ai_ranking(
             if not res:
                 stats["skipped"] += 1
                 continue
-            score     = max(1, min(5, int(res.get("score", 3))))
-            summary   = (res.get("summary_ko") or "").strip()
+            score   = max(1, min(5, int(res.get("score", 3))))
+            summary = (res.get("summary_ko") or "").strip()
+            topics  = json.dumps(res.get("topics") or [], ensure_ascii=False)
             cur.execute(
                 """UPDATE articles_raw
-                   SET ai_score = ?, summary_ko = ?, ai_model = ?
+                   SET ai_score = ?, summary_ko = ?, ai_model = ?, topics = ?
                    WHERE article_id = ?""",
-                (score, summary, MODEL, art["article_id"]),
+                (score, summary, MODEL, topics, art["article_id"]),
             )
             stats["analyzed"] += 1
 
@@ -250,4 +257,119 @@ def run_ai_ranking(
         "AI 분석 완료 — 전체=%d  분석=%d  실패=%d",
         stats["total"], stats["analyzed"], stats["skipped"],
     )
+    return stats
+
+
+# ---------------------------------------------------------------------------
+# 토픽 태깅 (이미 분석된 기사에 topics만 추가)
+# ---------------------------------------------------------------------------
+RETAG_PROMPT = """\
+당신은 글로벌 금융·경제 뉴스 태거입니다.
+다음 기사 목록에 대해 토픽 태그만 JSON 배열로 응답하세요.
+
+topics 기준 (3-5개, 한국어, 10자 이내):
+- 구체적인 경제·금융 주제어 (예: "금리인상", "BOJ통화정책", "달러강세", "OPEC증산")
+- 기업명·지수명 포함 가능 (예: "SpaceXIPO", "닛케이급락", "루피아약세")
+- 일반적인 단어 지양 ("경제", "금융", "뉴스" 금지)
+
+응답 형식 (JSON 배열만):
+[{"id":1,"topics":["금리인상","BOJ","엔화약세"]},...]
+"""
+
+
+def run_ai_tagging(
+    conn: sqlite3.Connection,
+    days: int = 7,
+    country_code: str | None = None,
+) -> dict:
+    """
+    ai_score는 있지만 topics가 없는 기사에 토픽 태그 추가.
+    최근 N일 기사 대상.
+    """
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise RuntimeError("환경변수 ANTHROPIC_API_KEY가 설정되지 않았습니다.")
+
+    ensure_ai_columns(conn)
+    client = anthropic.Anthropic(api_key=api_key)
+
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+    where_cc = "AND m.primary_country_code = ?" if country_code else ""
+    params: list[Any] = []
+    if country_code:
+        params.append(country_code)
+    params.extend([since])
+
+    rows = conn.execute(f"""
+        SELECT a.article_id, a.title, a.summary, a.summary_ko
+        FROM articles_raw a
+        JOIN media_sources m ON m.source_id = a.source_id
+        WHERE a.filter_decision = 'passed'
+          AND a.ai_score IS NOT NULL
+          AND (a.topics IS NULL OR a.topics = '[]' OR a.topics = '')
+          AND a.duplicate_of IS NULL
+          {where_cc}
+          AND DATE(COALESCE(a.published_at, a.fetched_at)) >= ?
+        ORDER BY a.published_at DESC NULLS LAST
+    """, params).fetchall()
+
+    stats = dict(total=len(rows), tagged=0, skipped=0)
+    if not rows:
+        log.info("태깅할 기사 없음")
+        return stats
+
+    log.info("토픽 태깅 시작: %d건 (배치=%d, 최근 %d일)", len(rows), BATCH_SIZE, days)
+
+    cur = conn.cursor()
+    for batch_start in range(0, len(rows), BATCH_SIZE):
+        batch = [dict(r) for r in rows[batch_start: batch_start + BATCH_SIZE]]
+
+        # 프롬프트 빌드 (summary_ko 우선, 없으면 영문 summary)
+        lines = []
+        for i, art in enumerate(batch, 1):
+            text = (art.get("summary_ko") or _clean_text(art.get("summary") or ""))[:200]
+            lines.append(f'id:{i} 제목: {art["title"] or ""}\n     내용: {text or "(없음)"}')
+        user_msg = "\n\n".join(lines)
+
+        try:
+            resp = client.messages.create(
+                model=MODEL,
+                max_tokens=800,
+                system=RETAG_PROMPT,
+                messages=[{"role": "user", "content": user_msg}],
+            )
+            raw = resp.content[0].text.strip()
+            if "```" in raw:
+                raw = raw.split("```")[1]
+                if raw.startswith("json"):
+                    raw = raw[4:]
+            results = json.loads(raw)
+            result_map = {r["id"]: r for r in results}
+        except Exception as e:
+            log.warning("태깅 API 오류: %s — 배치 건너뜀", e)
+            stats["skipped"] += len(batch)
+            continue
+
+        for i, art in enumerate(batch, 1):
+            res = result_map.get(i)
+            if not res:
+                stats["skipped"] += 1
+                continue
+            topics = json.dumps(res.get("topics") or [], ensure_ascii=False)
+            cur.execute(
+                "UPDATE articles_raw SET topics = ? WHERE article_id = ?",
+                (topics, art["article_id"]),
+            )
+            stats["tagged"] += 1
+
+        conn.commit()
+        log.info("  배치 %d-%d 완료 (%d/%d)",
+                 batch_start + 1, batch_start + len(batch),
+                 stats["tagged"] + stats["skipped"], len(rows))
+
+        if batch_start + BATCH_SIZE < len(rows):
+            time.sleep(RATE_DELAY)
+
+    log.info("토픽 태깅 완료 — 전체=%d  태깅=%d  실패=%d",
+             stats["total"], stats["tagged"], stats["skipped"])
     return stats
