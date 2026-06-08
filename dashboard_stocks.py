@@ -486,7 +486,7 @@ else:
     feed_date = today_str if is_realtime else sel_date
     articles  = load_feed(sel, sel_date=feed_date, limit=40)
 
-if not articles:
+if not articles and not weekly_active:
     st.html("""
     <div style="text-align:center;padding:80px 0">
       <div style="font-size:3em;margin-bottom:12px">📭</div>
