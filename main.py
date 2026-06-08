@@ -16,7 +16,10 @@ glb-news-rss CLI
   python main.py llm-filter --country IN     # 인도만
   python main.py ai-rank --country KH        # 캄보디아만
   python main.py ai-rank --limit 30          # 국가당 30건
-  python main.py brief --country US --days 7 # 미국 7일치
+  python main.py brief --type daily           # 일일 브리핑 (오늘)
+  python main.py brief --type weekly          # 주간 브리핑 (기본)
+  python main.py brief --date 2026-06-07      # 특정 날짜
+  python main.py brief --country US --type daily
   python main.py report                      # 매체 가용성 리포트
   python main.py list --limit 20             # 최근 수집 기사 출력
   python main.py export articles.json        # 전체 기사 JSON 덤프
@@ -174,11 +177,20 @@ def cmd_brief(args):
     if not os.environ.get("ANTHROPIC_API_KEY"):
         print("❌ 환경변수 ANTHROPIC_API_KEY를 설정하세요.", file=sys.stderr)
         sys.exit(1)
-    conn  = _open()
-    country = getattr(args, "country", None) or None
-    days    = getattr(args, "days", 3)
-    stats = briefing.run_briefing(conn, country_code=country, days=days)
-    print(f"[brief] 국가={stats['total']}  완료={stats['done']}  건너뜀={stats['skipped']}")
+    conn         = _open()
+    country      = getattr(args, "country", None) or None
+    brief_type   = getattr(args, "type",    "weekly")
+    brief_date   = getattr(args, "date",    None)
+    days         = getattr(args, "days",    None)
+    stats = briefing.run_briefing(
+        conn,
+        country_code   = country,
+        briefing_type  = brief_type,
+        briefing_date  = brief_date,
+        days           = days,
+    )
+    type_label = "일일" if brief_type == "daily" else "주간"
+    print(f"[brief/{type_label}] 국가={stats['total']}  완료={stats['done']}  건너뜀={stats['skipped']}")
 
 
 def cmd_export(args):
@@ -218,8 +230,15 @@ def main():
     air.add_argument("--country", type=str, default=None, help="국가 코드 (예: KH, US, CN)")
     air.add_argument("--limit",   type=int, default=50,   help="국가당 분석 건수 (기본 50)")
     brf = sub.add_parser("brief", help="국가별 동향 브리핑 생성 (ANTHROPIC_API_KEY 필요)")
-    brf.add_argument("--country", type=str, default=None, help="국가 코드 (예: US, IN)")
-    brf.add_argument("--days",    type=int, default=3,    help="분석 기간(일, 기본 3)")
+    brf.add_argument("--country", type=str, default=None,
+                     help="국가 코드 (예: US, IN)")
+    brf.add_argument("--type",    type=str, default="weekly",
+                     choices=["daily", "weekly"],
+                     help="브리핑 타입: daily(당일) | weekly(주간 7일, 기본)")
+    brf.add_argument("--date",    type=str, default=None,
+                     help="기준 날짜 YYYY-MM-DD (기본: 오늘)")
+    brf.add_argument("--days",    type=int, default=None,
+                     help="주간 브리핑 기간 (기본 7일)")
     lst = sub.add_parser("list", help="최근 수집 기사 출력")
     lst.add_argument("--limit", type=int, default=20)
     exp = sub.add_parser("export", help="JSON 덤프")

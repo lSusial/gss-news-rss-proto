@@ -3,8 +3,9 @@ GLB News RSS — Apple Stocks 스타일 대시보드 v3
 실행: streamlit run dashboard_stocks.py
 """
 import html as _html
+import json as _json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import streamlit as st
@@ -105,20 +106,32 @@ conn = get_conn()
 def _e(t): return _html.escape(str(t or ""))
 
 # ── 쿼리 ──────────────────────────────────────────────────────────────────────
-@st.cache_data(ttl=300)
-def load_briefing(code: str) -> dict | None:
+@st.cache_data(ttl=120)
+def load_briefing(code: str, brief_date: str, brief_type: str) -> dict | None:
     r = conn.execute(
-        "SELECT * FROM country_briefings WHERE cc = ?", (code,)
+        "SELECT * FROM country_briefings WHERE cc=? AND briefing_date=? AND briefing_type=?",
+        (code, brief_date, brief_type),
     ).fetchone()
     return dict(r) if r else None
 
+@st.cache_data(ttl=120)
+def load_available_dates(code: str, brief_type: str) -> list[str]:
+    """해당 국가·타입의 브리핑이 있는 날짜 목록 (최신순)."""
+    rows = conn.execute("""
+        SELECT DISTINCT briefing_date FROM country_briefings
+        WHERE cc = ? AND briefing_type = ?
+        ORDER BY briefing_date DESC
+        LIMIT 30
+    """, (code, brief_type)).fetchall()
+    return [r["briefing_date"] for r in rows]
+
 @st.cache_data(ttl=60)
-def load_feed(code: str, days: int | None = None, limit: int = 40) -> list[dict]:
+def load_feed(code: str, sel_date: str | None = None, limit: int = 40) -> list[dict]:
     where_cc   = "AND m.primary_country_code = ?" if code != "GLOBAL" else ""
-    where_date = (
-        f"AND COALESCE(a.published_at, a.fetched_at) >= datetime('now', '-{days} days')"
-        if days else ""
-    )
+    if sel_date:
+        where_date = f"AND DATE(COALESCE(a.published_at, a.fetched_at)) = '{sel_date}'"
+    else:
+        where_date = ""
     params = [code, limit] if code != "GLOBAL" else [limit]
     rows = conn.execute(f"""
         SELECT m.media_name, m.tier, m.primary_country_code AS cc,
@@ -187,50 +200,35 @@ def fmt_time(iso: str | None) -> str:
         return (iso or "")[:10]
 
 # ── 세션 ──────────────────────────────────────────────────────────────────────
-if "sel"         not in st.session_state: st.session_state.sel = "US"
-if "date_filter" not in st.session_state: st.session_state.date_filter = "전체"
+today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+if "sel"        not in st.session_state: st.session_state.sel        = "US"
+if "brief_type" not in st.session_state: st.session_state.brief_type = "weekly"
+if "sel_date"   not in st.session_state: st.session_state.sel_date   = today_str
 
 # ── 헤더 ──────────────────────────────────────────────────────────────────────
-today = datetime.now(timezone.utc).strftime("%Y. %-m. %-d.")
+today_disp = datetime.now(timezone.utc).strftime("%Y. %-m. %-d.")
 st.html(f"""
 <div style="padding:14px 0 8px;display:flex;
             justify-content:space-between;align-items:center">
   <span style="font-size:1.35em;font-weight:700;color:#fff;letter-spacing:-0.5px">
     GLB News
   </span>
-  <span style="font-size:0.72em;color:#636366">{today}</span>
+  <span style="font-size:0.72em;color:#636366">{today_disp}</span>
 </div>
 """)
 
-# ── 국가 pill + 날짜 필터 ─────────────────────────────────────────────────────
-sel         = st.session_state.sel
-date_active = (st.session_state.date_filter == "최근 2일")
+# ── 국가 pill ─────────────────────────────────────────────────────────────────
+sel = st.session_state.sel
 
-pill_cols = st.columns(len(COUNTRIES) + 1)
+pill_cols = st.columns(len(COUNTRIES))
 for col, (flag, code, name) in zip(pill_cols, COUNTRIES):
     with col:
-        # \n 으로 국기 위, 국가명 아래 2줄 표시
         if st.button(f"{flag}\n{name}", key=f"p_{code}", use_container_width=True):
             st.session_state.sel = code
             st.cache_data.clear()
             st.rerun()
 
-with pill_cols[-1]:
-    df_label = "📅\n2일" if date_active else "📅\n전체"
-    if st.button(df_label, key="btn_date", use_container_width=True):
-        st.session_state.date_filter = "전체" if date_active else "최근 2일"
-        st.cache_data.clear()
-        st.rerun()
-
-# 선택 pill 강조 CSS (f-string 중첩 없이 변수로 분리)
-sel_idx      = [c[1] for c in COUNTRIES].index(sel) + 1
-date_css     = (
-    f"div[data-testid='stHorizontalBlock'] > div:nth-child({len(COUNTRIES)+1})"
-    " > div > div > div > button {"
-    "background:#0a84ff !important;color:#fff !important;"
-    "border-color:#0a84ff !important;}"
-) if date_active else ""
-
+sel_idx = [c[1] for c in COUNTRIES].index(sel) + 1
 st.markdown(f"""
 <style>
 div[data-testid="stHorizontalBlock"] > div:nth-child({sel_idx})
@@ -238,24 +236,101 @@ div[data-testid="stHorizontalBlock"] > div:nth-child({sel_idx})
     background:#fff !important; color:#000 !important;
     border-color:#fff !important; font-weight:600 !important;
 }}
-{date_css}
-/* pill row 위아래 여백 제거 */
 div[data-testid="stHorizontalBlock"] {{
-  gap:6px !important;
-  margin-bottom:0 !important;
+  gap:6px !important; margin-bottom:0 !important;
 }}
-div[data-testid="stHorizontalBlock"] > div {{
-  padding:0 !important;
-}}
+div[data-testid="stHorizontalBlock"] > div {{ padding:0 !important; }}
 </style>
 """, unsafe_allow_html=True)
 
 st.html("<div style='height:10px;border-top:1px solid #1c1c1e;margin-top:8px'></div>")
 
-# ── 동향 브리핑 카드 ──────────────────────────────────────────────────────────
-import json as _json
+# ── 날짜 네비게이션 + 브리핑 타입 ────────────────────────────────────────────
+sel_date   = st.session_state.sel_date
+brief_type = st.session_state.brief_type
 
-brief = load_briefing(sel)
+nav_c1, nav_c2, nav_c3, nav_c4, nav_c5 = st.columns([1, 2, 1, 1, 1])
+
+with nav_c1:
+    if st.button("◀ 이전", key="btn_prev", use_container_width=True):
+        prev = (date.fromisoformat(sel_date) - timedelta(days=1)).isoformat()
+        st.session_state.sel_date = prev
+        st.cache_data.clear()
+        st.rerun()
+
+with nav_c2:
+    picked = st.date_input(
+        "날짜", value=date.fromisoformat(sel_date),
+        label_visibility="collapsed", key="date_picker"
+    )
+    picked_str = picked.isoformat()
+    if picked_str != sel_date:
+        st.session_state.sel_date = picked_str
+        st.cache_data.clear()
+        st.rerun()
+
+with nav_c3:
+    if st.button("다음 ▶", key="btn_next", use_container_width=True):
+        nxt = (date.fromisoformat(sel_date) + timedelta(days=1)).isoformat()
+        if nxt <= today_str:
+            st.session_state.sel_date = nxt
+            st.cache_data.clear()
+            st.rerun()
+
+with nav_c4:
+    daily_active = (brief_type == "daily")
+    if st.button("일일" if not daily_active else "✓ 일일",
+                 key="btn_daily", use_container_width=True):
+        st.session_state.brief_type = "daily"
+        st.cache_data.clear()
+        st.rerun()
+
+with nav_c5:
+    weekly_active = (brief_type == "weekly")
+    if st.button("주간" if not weekly_active else "✓ 주간",
+                 key="btn_weekly", use_container_width=True):
+        st.session_state.brief_type = "weekly"
+        st.cache_data.clear()
+        st.rerun()
+
+# 선택된 타입 버튼 강조
+daily_css = (
+    "div[data-testid='stHorizontalBlock']:last-of-type > div:nth-child(4)"
+    " > div > div > div > button {"
+    "background:#0a84ff !important;color:#fff !important;border-color:#0a84ff !important;}"
+) if daily_active else ""
+weekly_css = (
+    "div[data-testid='stHorizontalBlock']:last-of-type > div:nth-child(5)"
+    " > div > div > div > button {"
+    "background:#0a84ff !important;color:#fff !important;border-color:#0a84ff !important;}"
+) if weekly_active else ""
+st.markdown(f"<style>{daily_css}{weekly_css}</style>", unsafe_allow_html=True)
+
+st.html("<div style='height:6px;border-top:1px solid #1c1c1e;margin-top:6px'></div>")
+
+# ── 동향 브리핑 카드 ──────────────────────────────────────────────────────────
+type_label  = "일일 브리핑" if brief_type == "daily" else "주간 브리핑"
+avail_dates = load_available_dates(sel, brief_type)
+
+brief = load_briefing(sel, sel_date, brief_type)
+if not brief:
+    # 선택한 날짜에 브리핑이 없으면 가장 가까운 날짜 안내
+    if avail_dates:
+        latest = avail_dates[0]
+        st.html(
+            f"<div style='background:#1c1c1e;border-radius:12px;padding:14px 18px;"
+            f"margin-bottom:12px;color:#8e8e93;font-size:0.85em'>"
+            f"📭 {sel_date} {type_label}가 없습니다. "
+            f"가장 최근 브리핑: <b style='color:#ebebf5'>{latest}</b></div>"
+        )
+    else:
+        st.html(
+            f"<div style='background:#1c1c1e;border-radius:12px;padding:14px 18px;"
+            f"margin-bottom:12px;color:#8e8e93;font-size:0.85em'>"
+            f"📭 {type_label}가 아직 없습니다. "
+            f"<code>python main.py brief --type {brief_type}</code>를 실행하세요.</div>"
+        )
+
 if brief and brief.get("summary"):
     gen_time = fmt_time(brief.get("generated_at", ""))
     summary  = _e(brief.get("summary", ""))
@@ -339,8 +414,8 @@ if brief and brief.get("summary"):
         f"align-items:center;margin-bottom:16px'>"
         f"<div style='display:flex;align-items:center;gap:10px'>"
         f"<span style='font-size:0.68em;font-weight:700;color:#0a84ff;"
-        f"letter-spacing:1.2px;text-transform:uppercase'>동향 브리핑</span>"
-        f"<span style='font-size:0.62em;color:#48484a'>· {art_cnt}건 분석</span>"
+        f"letter-spacing:1.2px;text-transform:uppercase'>{_e(type_label)}</span>"
+        f"<span style='font-size:0.62em;color:#48484a'>· {sel_date} · {art_cnt}건 분석</span>"
         f"</div>"
         f"<span style='font-size:0.62em;color:#48484a'>{gen_time} 생성</span>"
         f"</div>"
@@ -360,8 +435,9 @@ if brief and brief.get("summary"):
     )
 
 # ── 뉴스 리스트 ───────────────────────────────────────────────────────────────
-days_filter = 2 if date_active else None
-articles    = load_feed(sel, days=days_filter, limit=20)
+# 오늘이 선택된 경우 날짜 필터 없이 전체, 다른 날짜는 해당 날짜 기사만
+feed_date = None if sel_date == today_str else sel_date
+articles  = load_feed(sel, sel_date=feed_date, limit=40)
 
 if not articles:
     st.html("""

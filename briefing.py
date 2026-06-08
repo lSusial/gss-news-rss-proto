@@ -1,16 +1,22 @@
 """
 glb-news-rss 국가별 동향 브리핑 생성 (Stage 4)
 
+브리핑 타입:
+  daily  : 해당 날짜 하루치 기사 분석 (당일 동향)
+  weekly : 최근 7일 기사 종합 분석 (주간 동향)
+
 사용법:
-  python main.py brief              # 전체 국가
-  python main.py brief --country US # 미국만
-  python main.py brief --days 7     # 최근 7일 기준
+  python main.py brief                           # 주간, 오늘
+  python main.py brief --type daily              # 일일, 오늘
+  python main.py brief --date 2026-06-07         # 특정 날짜
+  python main.py brief --type daily --country US
 """
 from __future__ import annotations
 
 import json
 import logging
 import os
+import re
 import sqlite3
 import time
 from datetime import datetime, timezone
@@ -55,9 +61,59 @@ SYSTEM_PROMPT = """\
 issues는 반드시 3-5개 포함. 각 detail은 최소 3문장 이상.
 """
 
-def _build_prompt(cc: str, articles: list[dict]) -> str:
+
+# ---------------------------------------------------------------------------
+# DB 마이그레이션
+# ---------------------------------------------------------------------------
+def ensure_briefings_schema(conn: sqlite3.Connection) -> None:
+    """country_briefings 테이블을 날짜·타입별 히스토리 구조로 마이그레이션."""
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(country_briefings)")}
+    if "briefing_date" in cols:
+        return
+
+    log.info("마이그레이션: country_briefings → (cc, briefing_date, briefing_type) 히스토리 구조")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS country_briefings_v2 (
+            briefing_id     INTEGER PRIMARY KEY AUTOINCREMENT,
+            cc              TEXT NOT NULL,
+            briefing_date   TEXT NOT NULL,
+            briefing_type   TEXT NOT NULL DEFAULT 'weekly',
+            generated_at    TEXT,
+            summary         TEXT,
+            issues          TEXT,
+            outlook         TEXT,
+            keywords        TEXT,
+            model           TEXT,
+            article_count   INTEGER,
+            source_articles TEXT,
+            UNIQUE(cc, briefing_date, briefing_type)
+        )
+    """)
+    # 기존 데이터 → weekly, 날짜는 generated_at에서 추출
+    conn.execute("""
+        INSERT OR IGNORE INTO country_briefings_v2
+          (cc, briefing_date, briefing_type, generated_at, summary,
+           issues, outlook, keywords, model, article_count, source_articles)
+        SELECT cc,
+               COALESCE(SUBSTR(generated_at, 1, 10), date('now')),
+               'weekly',
+               generated_at, summary, issues, outlook, keywords,
+               model, article_count, source_articles
+        FROM country_briefings
+    """)
+    conn.execute("DROP TABLE country_briefings")
+    conn.execute("ALTER TABLE country_briefings_v2 RENAME TO country_briefings")
+    conn.commit()
+    log.info("마이그레이션 완료")
+
+
+# ---------------------------------------------------------------------------
+# Claude 호출
+# ---------------------------------------------------------------------------
+def _build_prompt(cc: str, articles: list[dict], briefing_type: str, briefing_date: str) -> str:
     name = CC_NAME.get(cc, cc)
-    lines = [f"[{name} 최신 경제·금융 뉴스 {len(articles)}건]\n"]
+    type_label = "당일" if briefing_type == "daily" else "주간"
+    lines = [f"[{name} {briefing_date} {type_label} 경제·금융 뉴스 {len(articles)}건]\n"]
     for i, a in enumerate(articles, 1):
         score  = a.get("ai_score", "")
         title  = a.get("title", "")
@@ -70,12 +126,18 @@ def _build_prompt(cc: str, articles: list[dict]) -> str:
     return "\n\n".join(lines)
 
 
-def _call_claude(client: anthropic.Anthropic, cc: str, articles: list[dict]) -> dict | None:
-    prompt = _build_prompt(cc, articles)
+def _call_claude(
+    client: anthropic.Anthropic,
+    cc: str,
+    articles: list[dict],
+    briefing_type: str,
+    briefing_date: str,
+) -> dict | None:
+    prompt = _build_prompt(cc, articles, briefing_type, briefing_date)
     try:
         resp = client.messages.create(
             model=MODEL,
-            max_tokens=3000,
+            max_tokens=4096,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": prompt}],
         )
@@ -84,22 +146,50 @@ def _call_claude(client: anthropic.Anthropic, cc: str, articles: list[dict]) -> 
             raw = raw.split("```")[1]
             if raw.startswith("json"):
                 raw = raw[4:]
+        m = re.search(r"\{.*\}", raw, re.DOTALL)
+        if m:
+            raw = m.group(0)
         return json.loads(raw)
     except Exception as e:
         log.warning("브리핑 API 오류 (%s): %s", cc, e)
         return None
 
 
+# ---------------------------------------------------------------------------
+# 메인 실행
+# ---------------------------------------------------------------------------
 def run_briefing(
     conn: sqlite3.Connection,
     country_code: str | None = None,
-    days: int = 3,
+    briefing_type: str = "weekly",   # 'daily' | 'weekly'
+    briefing_date: str | None = None,  # YYYY-MM-DD, 기본값: 오늘
+    days: int | None = None,
 ) -> dict:
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         raise RuntimeError("환경변수 ANTHROPIC_API_KEY가 설정되지 않았습니다.")
 
+    ensure_briefings_schema(conn)
     client = anthropic.Anthropic(api_key=api_key)
+
+    if briefing_date is None:
+        briefing_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    # 날짜 필터 구성
+    if briefing_type == "daily":
+        # 해당 날짜 하루치 기사만
+        date_filter = f"AND DATE(COALESCE(a.published_at, a.fetched_at)) = '{briefing_date}'"
+        min_articles = 2
+    else:
+        # 주간: briefing_date 기준 최근 7일
+        n_days = days if days else 7
+        date_filter = (
+            f"AND COALESCE(a.published_at, a.fetched_at) "
+            f">= datetime('{briefing_date}', '-{n_days - 1} days') "
+            f"AND COALESCE(a.published_at, a.fetched_at) "
+            f"<= datetime('{briefing_date}', '+1 day')"
+        )
+        min_articles = 3
 
     if country_code:
         targets = [country_code]
@@ -110,9 +200,10 @@ def run_briefing(
         targets = [r[0] for r in rows]
 
     stats = {"total": len(targets), "done": 0, "skipped": 0}
+    type_label = "일일" if briefing_type == "daily" else "주간"
 
     for cc in targets:
-        articles = conn.execute("""
+        articles = conn.execute(f"""
             SELECT a.article_id, a.title, a.summary_ko, a.summary,
                    a.ai_score, a.published_at, a.link,
                    m.media_name, m.tier
@@ -121,25 +212,25 @@ def run_briefing(
             WHERE m.primary_country_code = ?
               AND a.filter_decision = 'passed'
               AND a.ai_score >= 3
-              AND COALESCE(a.published_at, a.fetched_at) >= datetime('now', ? || ' days')
+              {date_filter}
             ORDER BY a.ai_score DESC, a.published_at DESC NULLS LAST
             LIMIT ?
-        """, (cc, f"-{days}", MAX_ARTS)).fetchall()
+        """, (cc, MAX_ARTS)).fetchall()
 
-        if len(articles) < 3:
-            log.info("  %s: 기사 부족 (%d건) — 건너뜀", cc, len(articles))
+        if len(articles) < min_articles:
+            log.info("  %s [%s] %s: 기사 부족 (%d건) — 건너뜀",
+                     cc, type_label, briefing_date, len(articles))
             stats["skipped"] += 1
             continue
 
         arts_list = [dict(a) for a in articles]
-        log.info("  %s: %d건 분석 중...", cc, len(arts_list))
-        result = _call_claude(client, cc, arts_list)
+        log.info("  %s [%s] %s: %d건 분석 중...", cc, type_label, briefing_date, len(arts_list))
+        result = _call_claude(client, cc, arts_list, briefing_type, briefing_date)
 
         if not result:
             stats["skipped"] += 1
             continue
 
-        # 소스 기사 링크 저장 (title, link, source, score)
         source_articles = [
             {
                 "title":  a["title"],
@@ -152,9 +243,10 @@ def run_briefing(
 
         conn.execute("""
             INSERT INTO country_briefings
-              (cc, generated_at, summary, issues, outlook, keywords, model, article_count, source_articles)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(cc) DO UPDATE SET
+              (cc, briefing_date, briefing_type, generated_at,
+               summary, issues, outlook, keywords, model, article_count, source_articles)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(cc, briefing_date, briefing_type) DO UPDATE SET
                 generated_at    = excluded.generated_at,
                 summary         = excluded.summary,
                 issues          = excluded.issues,
@@ -165,18 +257,50 @@ def run_briefing(
                 source_articles = excluded.source_articles
         """, (
             cc,
+            briefing_date,
+            briefing_type,
             datetime.now(timezone.utc).isoformat(),
             result.get("summary", ""),
-            json.dumps(result.get("issues", []),    ensure_ascii=False),
+            json.dumps(result.get("issues",   []), ensure_ascii=False),
             result.get("outlook", ""),
-            json.dumps(result.get("keywords", []),  ensure_ascii=False),
+            json.dumps(result.get("keywords", []), ensure_ascii=False),
             MODEL,
             len(arts_list),
             json.dumps(source_articles, ensure_ascii=False),
         ))
         conn.commit()
         stats["done"] += 1
-        log.info("  %s: 브리핑 완료", cc)
+        log.info("  %s [%s] %s: 브리핑 완료", cc, type_label, briefing_date)
         time.sleep(RATE_DELAY)
 
     return stats
+
+
+# ---------------------------------------------------------------------------
+# 조회 헬퍼 (대시보드용)
+# ---------------------------------------------------------------------------
+def get_briefing(
+    conn: sqlite3.Connection,
+    cc: str,
+    briefing_date: str,
+    briefing_type: str = "weekly",
+) -> dict | None:
+    r = conn.execute("""
+        SELECT * FROM country_briefings
+        WHERE cc = ? AND briefing_date = ? AND briefing_type = ?
+    """, (cc, briefing_date, briefing_type)).fetchone()
+    return dict(r) if r else None
+
+
+def get_available_dates(
+    conn: sqlite3.Connection,
+    cc: str,
+    briefing_type: str = "weekly",
+) -> list[str]:
+    """해당 국가·타입의 브리핑이 존재하는 날짜 목록 (최신순)."""
+    rows = conn.execute("""
+        SELECT briefing_date FROM country_briefings
+        WHERE cc = ? AND briefing_type = ?
+        ORDER BY briefing_date DESC
+    """, (cc, briefing_type)).fetchall()
+    return [r["briefing_date"] for r in rows]
