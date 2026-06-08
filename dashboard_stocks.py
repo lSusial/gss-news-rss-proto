@@ -231,9 +231,15 @@ if weekly_active:
     d = date.fromisoformat(sel_date)
     monday = d - timedelta(days=d.weekday())
     if monday.isoformat() != sel_date:
-        st.session_state.sel_date       = monday.isoformat()
-        st.session_state["date_picker"] = monday
+        st.session_state.sel_date = monday.isoformat()
         sel_date = monday.isoformat()
+
+# date_picker 위젯 상태를 sel_date 기준으로 단방향 동기화
+# (value= 파라미터 충돌 방지: session_state만 사용)
+if daily_active:
+    _sd = date.fromisoformat(sel_date)
+    if st.session_state.get("date_picker") != _sd:
+        st.session_state["date_picker"] = _sd
 
 # [일일][1주][실시간] | [◀] [날짜] [▶]
 t1, t2, t3, gap, n1, n2, n3 = st.columns([1, 1, 1, 0.3, 1, 2, 1])
@@ -265,8 +271,7 @@ with n1:
     if st.button("◀", key="btn_prev",
                  use_container_width=True, disabled=is_realtime):
         prev = date.fromisoformat(sel_date) - nav_step
-        st.session_state.sel_date       = prev.isoformat()
-        st.session_state["date_picker"] = prev
+        st.session_state.sel_date = prev.isoformat()
         st.cache_data.clear()
         st.rerun()
 
@@ -286,9 +291,11 @@ with n2:
             f"color:#ebebf5;font-size:0.80em;font-weight:500'>{week_label}</div>"
         )
     else:
+        # value= 미사용 — session_state["date_picker"]로만 제어 (충돌 방지)
         picked = st.date_input(
-            "날짜", value=date.fromisoformat(sel_date),
-            label_visibility="collapsed", key="date_picker"
+            "날짜",
+            label_visibility="collapsed",
+            key="date_picker"
         )
         picked_str = picked.isoformat()
         if picked_str != sel_date:
@@ -300,11 +307,8 @@ with n3:
     if st.button("▶", key="btn_next",
                  use_container_width=True, disabled=is_realtime):
         nxt = date.fromisoformat(sel_date) + nav_step
-        # 주간: 다음 주 월요일이 어제보다 이전이어야 이동 가능
-        limit = yesterday_str
-        if nxt.isoformat() <= limit:
-            st.session_state.sel_date       = nxt.isoformat()
-            st.session_state["date_picker"] = nxt
+        if nxt.isoformat() <= yesterday_str:
+            st.session_state.sel_date = nxt.isoformat()
             st.cache_data.clear()
             st.rerun()
 
