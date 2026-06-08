@@ -255,8 +255,9 @@ nav_c1, nav_c2, nav_c3, nav_c4, nav_c5, nav_c6 = st.columns([1, 2, 1, 1, 1, 1])
 with nav_c1:
     if st.button("◀ 이전", key="btn_prev",
                  use_container_width=True, disabled=is_realtime):
-        prev = (date.fromisoformat(sel_date) - timedelta(days=1)).isoformat()
-        st.session_state.sel_date = prev
+        prev = date.fromisoformat(sel_date) - timedelta(days=1)
+        st.session_state.sel_date     = prev.isoformat()
+        st.session_state["date_picker"] = prev   # date_input 위젯 동기화
         st.cache_data.clear()
         st.rerun()
 
@@ -280,9 +281,10 @@ with nav_c2:
 with nav_c3:
     if st.button("다음 ▶", key="btn_next",
                  use_container_width=True, disabled=is_realtime):
-        nxt = (date.fromisoformat(sel_date) + timedelta(days=1)).isoformat()
-        if nxt <= yesterday_str:
-            st.session_state.sel_date = nxt
+        nxt = date.fromisoformat(sel_date) + timedelta(days=1)
+        if nxt.isoformat() <= yesterday_str:
+            st.session_state.sel_date      = nxt.isoformat()
+            st.session_state["date_picker"] = nxt   # date_input 위젯 동기화
             st.cache_data.clear()
             st.rerun()
 
