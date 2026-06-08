@@ -245,17 +245,17 @@ if daily_active:
 t1, t2, t3, gap, n1, n2, n3 = st.columns([1, 1, 1, 0.3, 1, 2, 1])
 
 with t1:
-    if st.button("일일", key="btn_daily", use_container_width=True,
-                 type="primary" if daily_active else "secondary"):
-        st.session_state.brief_type = "daily"
-        st.session_state.sel_date   = yesterday_str   # 항상 전날로 이동
+    if st.button("주간 브리핑", key="btn_weekly", use_container_width=True,
+                 type="primary" if weekly_active else "secondary"):
+        st.session_state.brief_type = "weekly"
         st.cache_data.clear()
         st.rerun()
 
 with t2:
-    if st.button("1주", key="btn_weekly", use_container_width=True,
-                 type="primary" if weekly_active else "secondary"):
-        st.session_state.brief_type = "weekly"
+    if st.button("일일", key="btn_daily", use_container_width=True,
+                 type="primary" if daily_active else "secondary"):
+        st.session_state.brief_type = "daily"
+        st.session_state.sel_date   = yesterday_str
         st.cache_data.clear()
         st.rerun()
 
