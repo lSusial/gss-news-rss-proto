@@ -201,9 +201,10 @@ def fmt_time(iso: str | None) -> str:
 
 # ── 세션 ──────────────────────────────────────────────────────────────────────
 today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+yesterday_str = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
 if "sel"        not in st.session_state: st.session_state.sel        = "US"
 if "brief_type" not in st.session_state: st.session_state.brief_type = "weekly"
-if "sel_date"   not in st.session_state: st.session_state.sel_date   = today_str
+if "sel_date"   not in st.session_state: st.session_state.sel_date   = yesterday_str
 
 # ── 헤더 ──────────────────────────────────────────────────────────────────────
 today_disp = datetime.now(timezone.utc).strftime("%Y. %-m. %-d.")
@@ -245,36 +246,45 @@ st.html("<div style='height:10px;border-top:1px solid #1c1c1e;margin-top:8px'></
 sel_date   = st.session_state.sel_date
 brief_type = st.session_state.brief_type
 
-nav_c1, nav_c2, nav_c3, nav_c4, nav_c5 = st.columns([1, 2, 1, 1, 1])
+is_realtime   = (brief_type == "realtime")
+daily_active  = (brief_type == "daily")
+weekly_active = (brief_type == "weekly")
+
+nav_c1, nav_c2, nav_c3, nav_c4, nav_c5, nav_c6 = st.columns([1, 2, 1, 1, 1, 1])
 
 with nav_c1:
-    if st.button("◀ 이전", key="btn_prev", use_container_width=True):
+    if st.button("◀ 이전", key="btn_prev",
+                 use_container_width=True, disabled=is_realtime):
         prev = (date.fromisoformat(sel_date) - timedelta(days=1)).isoformat()
         st.session_state.sel_date = prev
         st.cache_data.clear()
         st.rerun()
 
 with nav_c2:
-    picked = st.date_input(
-        "날짜", value=date.fromisoformat(sel_date),
-        label_visibility="collapsed", key="date_picker"
-    )
-    picked_str = picked.isoformat()
-    if picked_str != sel_date:
-        st.session_state.sel_date = picked_str
-        st.cache_data.clear()
-        st.rerun()
-
-with nav_c3:
-    if st.button("다음 ▶", key="btn_next", use_container_width=True):
-        nxt = (date.fromisoformat(sel_date) + timedelta(days=1)).isoformat()
-        if nxt <= today_str:
-            st.session_state.sel_date = nxt
+    if is_realtime:
+        st.html(
+            "<div style='text-align:center;padding:8px 0;"
+            "color:#30d158;font-size:0.82em;font-weight:600'>📡 실시간</div>"
+        )
+    else:
+        picked = st.date_input(
+            "날짜", value=date.fromisoformat(sel_date),
+            label_visibility="collapsed", key="date_picker"
+        )
+        picked_str = picked.isoformat()
+        if picked_str != sel_date:
+            st.session_state.sel_date = picked_str
             st.cache_data.clear()
             st.rerun()
 
-daily_active  = (brief_type == "daily")
-weekly_active = (brief_type == "weekly")
+with nav_c3:
+    if st.button("다음 ▶", key="btn_next",
+                 use_container_width=True, disabled=is_realtime):
+        nxt = (date.fromisoformat(sel_date) + timedelta(days=1)).isoformat()
+        if nxt <= yesterday_str:
+            st.session_state.sel_date = nxt
+            st.cache_data.clear()
+            st.rerun()
 
 with nav_c4:
     if st.button("일일", key="btn_daily", use_container_width=True,
@@ -290,30 +300,51 @@ with nav_c5:
         st.cache_data.clear()
         st.rerun()
 
+with nav_c6:
+    if st.button("실시간", key="btn_realtime", use_container_width=True,
+                 type="primary" if is_realtime else "secondary"):
+        st.session_state.brief_type = "realtime"
+        st.cache_data.clear()
+        st.rerun()
+
 st.html("<div style='height:6px;border-top:1px solid #1c1c1e;margin-top:6px'></div>")
 
 # ── 동향 브리핑 카드 ──────────────────────────────────────────────────────────
-type_label  = "일일 브리핑" if brief_type == "daily" else "주간 브리핑"
-avail_dates = load_available_dates(sel, brief_type)
-
-brief = load_briefing(sel, sel_date, brief_type)
-if not brief:
-    # 선택한 날짜에 브리핑이 없으면 가장 가까운 날짜 안내
-    if avail_dates:
-        latest = avail_dates[0]
-        st.html(
-            f"<div style='background:#1c1c1e;border-radius:12px;padding:14px 18px;"
-            f"margin-bottom:12px;color:#8e8e93;font-size:0.85em'>"
-            f"📭 {sel_date} {type_label}가 없습니다. "
-            f"가장 최근 브리핑: <b style='color:#ebebf5'>{latest}</b></div>"
-        )
-    else:
-        st.html(
-            f"<div style='background:#1c1c1e;border-radius:12px;padding:14px 18px;"
-            f"margin-bottom:12px;color:#8e8e93;font-size:0.85em'>"
-            f"📭 {type_label}가 아직 없습니다. "
-            f"<code>python main.py brief --type {brief_type}</code>를 실행하세요.</div>"
-        )
+if is_realtime:
+    # 실시간 모드: 브리핑 없이 뉴스만
+    st.html(
+        "<div style='background:#0d1a0d;border:1px solid #1a3a1a;border-radius:12px;"
+        "padding:12px 18px;margin-bottom:12px;display:flex;align-items:center;gap:10px'>"
+        "<span style='color:#30d158;font-size:1em'>📡</span>"
+        "<div>"
+        "<span style='color:#30d158;font-size:0.78em;font-weight:700;"
+        "letter-spacing:1px'>실시간 뉴스</span>"
+        "<span style='color:#48484a;font-size:0.72em;margin-left:10px'>"
+        "오늘 수집 기사 · 브리핑 없음</span>"
+        "</div>"
+        "</div>"
+    )
+    brief = None
+else:
+    type_label  = "일일 브리핑" if brief_type == "daily" else "주간 브리핑"
+    avail_dates = load_available_dates(sel, brief_type)
+    brief = load_briefing(sel, sel_date, brief_type)
+    if not brief:
+        if avail_dates:
+            latest = avail_dates[0]
+            st.html(
+                f"<div style='background:#1c1c1e;border-radius:12px;padding:14px 18px;"
+                f"margin-bottom:12px;color:#8e8e93;font-size:0.85em'>"
+                f"📭 {sel_date} {type_label}가 없습니다. "
+                f"가장 최근 브리핑: <b style='color:#ebebf5'>{latest}</b></div>"
+            )
+        else:
+            st.html(
+                f"<div style='background:#1c1c1e;border-radius:12px;padding:14px 18px;"
+                f"margin-bottom:12px;color:#8e8e93;font-size:0.85em'>"
+                f"📭 {type_label}가 아직 없습니다. "
+                f"<code>python main.py brief --type {brief_type}</code>를 실행하세요.</div>"
+            )
 
 if brief and brief.get("summary"):
     gen_time = fmt_time(brief.get("generated_at", ""))
@@ -419,8 +450,8 @@ if brief and brief.get("summary"):
     )
 
 # ── 뉴스 리스트 ───────────────────────────────────────────────────────────────
-# 오늘이 선택된 경우 날짜 필터 없이 전체, 다른 날짜는 해당 날짜 기사만
-feed_date = None if sel_date == today_str else sel_date
+# 실시간: 오늘 기사 / 날짜 선택: 해당 날짜 기사
+feed_date = today_str if is_realtime else sel_date
 articles  = load_feed(sel, sel_date=feed_date, limit=40)
 
 if not articles:
