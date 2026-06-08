@@ -334,6 +334,11 @@ div[data-testid="stHorizontalBlock"] {
   gap:6px !important; margin-bottom:0 !important;
 }
 div[data-testid="stHorizontalBlock"] > div { padding:0 !important; }
+
+/* date_input 중앙 정렬 */
+div[data-testid="stDateInput"] { text-align:center !important; }
+div[data-testid="stDateInput"] input { text-align:center !important; }
+div[data-testid="stDateInput"] > div { justify-content:center !important; }
 </style>
 """, unsafe_allow_html=True)
 
