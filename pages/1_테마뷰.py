@@ -184,15 +184,19 @@ def render_articles(articles: list[dict], theme_color: str) -> str:
 
 # ── 헤더 ──────────────────────────────────────────────────────────────────────
 today_str = datetime.now(timezone.utc).strftime("%Y. %-m. %-d.")
-st.html(f"""
-<div style='padding:14px 0 8px;display:flex;justify-content:space-between;align-items:center'>
-  <div>
-    <span style='font-size:1.35em;font-weight:700;color:#fff;letter-spacing:-0.5px'>GLB News</span>
-    <span style='font-size:0.75em;color:#636366;margin-left:10px'>테마뷰</span>
-  </div>
-  <span style='font-size:0.72em;color:#636366'>{today_str}</span>
-</div>
-""")
+h1, h2, h3 = st.columns([3, 1, 1])
+with h1:
+    st.html(f"""
+    <div style='padding:14px 0 6px;display:flex;align-items:center;gap:12px'>
+      <span style='font-size:1.35em;font-weight:700;color:#fff;letter-spacing:-0.5px'>GLB News</span>
+      <span style='font-size:0.75em;color:#636366'>테마뷰</span>
+      <span style='font-size:0.72em;color:#636366;margin-left:auto'>{today_str}</span>
+    </div>
+    """)
+with h2:
+    st.page_link("dashboard_stocks.py", label="📰 뉴스", use_container_width=True)
+with h3:
+    st.page_link("pages/1_테마뷰.py", label="🎯 테마뷰", use_container_width=True)
 
 # ── 필터 컨트롤 ───────────────────────────────────────────────────────────────
 fc1, fc2, fc3 = st.columns([2, 1, 1])

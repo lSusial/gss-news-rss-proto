@@ -208,15 +208,18 @@ if "sel_date"   not in st.session_state: st.session_state.sel_date   = yesterday
 
 # ── 헤더 ──────────────────────────────────────────────────────────────────────
 today_disp = datetime.now(timezone.utc).strftime("%Y. %-m. %-d.")
-st.html(f"""
-<div style="padding:14px 0 6px;display:flex;
-            justify-content:space-between;align-items:center">
-  <span style="font-size:1.35em;font-weight:700;color:#fff;letter-spacing:-0.5px">
-    GLB News
-  </span>
-  <span style="font-size:0.72em;color:#636366">{today_disp}</span>
-</div>
-""")
+h1, h2, h3 = st.columns([3, 1, 1])
+with h1:
+    st.html(f"""
+    <div style="padding:14px 0 6px;display:flex;align-items:center;gap:12px">
+      <span style="font-size:1.35em;font-weight:700;color:#fff;letter-spacing:-0.5px">GLB News</span>
+      <span style="font-size:0.72em;color:#636366">{today_disp}</span>
+    </div>
+    """)
+with h2:
+    st.page_link("dashboard_stocks.py", label="📰 뉴스", use_container_width=True)
+with h3:
+    st.page_link("pages/1_테마뷰.py", label="🎯 테마뷰", use_container_width=True)
 
 # ── Row 1: 뷰 타입 + 날짜 네비게이션 (최상단) ────────────────────────────────
 sel_date   = st.session_state.sel_date
