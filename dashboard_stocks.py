@@ -46,26 +46,6 @@ st.markdown("""
 section.main > div { background:#000 !important; }
 .block-container { max-width:1040px; padding:0 1.4rem 3rem; margin:auto; }
 
-/* pill 버튼 — 국기(위) + 국가명(아래) 2줄 */
-div[data-testid="stHorizontalBlock"] > div > div > div > button {
-  border-radius:14px !important;
-  border:1px solid #2c2c2e !important;
-  background:#1c1c1e !important;
-  color:#ebebf5 !important;
-  font-size:0.62em !important;
-  padding:6px 4px !important;
-  font-weight:500 !important;
-  height:auto !important; min-height:50px !important;
-  white-space:pre-line !important;
-  line-height:1.5 !important;
-}
-/* 첫째 줄(국기 이모지)은 크게, 둘째 줄(국가명)은 위 font-size 그대로 */
-div[data-testid="stHorizontalBlock"] > div > div > div > button::first-line {
-  font-size:1.65em !important;
-}
-div[data-testid="stHorizontalBlock"] > div > div > div > button:hover {
-  background:#2c2c2e !important;
-}
 
 /* metric */
 [data-testid="metric-container"] {
@@ -83,6 +63,7 @@ summary p { color:#636366 !important; font-size:0.80em !important; }
 /* 카드 hover */
 .news-card { transition: opacity 0.15s ease; }
 .news-card:hover { opacity: 0.85; }
+
 
 /* 카드 행 세로 간격 압축 */
 [data-testid="stHorizontalBlock"] [data-testid="stVerticalBlockBorderWrapper"] {
@@ -244,8 +225,8 @@ if daily_active:
     if st.session_state.get("date_picker") != _sd:
         st.session_state["date_picker"] = _sd
 
-# [일일][1주][실시간] | [◀] [날짜] [▶]
-t1, t2, t3, gap, n1, n2, n3 = st.columns([1, 1, 1, 0.3, 1, 2, 1])
+# Row 1: 모드 버튼
+t1, t2, t3 = st.columns(3)
 
 with t1:
     if st.button("주간 브리핑", key="btn_weekly", use_container_width=True,
@@ -269,7 +250,9 @@ with t3:
         st.cache_data.clear()
         st.rerun()
 
+# Row 2: 날짜 네비
 nav_step = timedelta(days=7) if weekly_active else timedelta(days=1)
+n1, n2, n3 = st.columns([1, 3, 1])
 
 with n1:
     if st.button("◀", key="btn_prev",
@@ -286,7 +269,6 @@ with n2:
             "color:#30d158;font-size:0.82em;font-weight:600'>📡 실시간</div>"
         )
     elif weekly_active:
-        # 주간: 월~일 범위 표시
         mon = date.fromisoformat(sel_date)
         sun = mon + timedelta(days=6)
         week_label = f"{mon.strftime('%-m/%-d')}(월) ~ {sun.strftime('%-m/%-d')}(일)"
@@ -295,7 +277,6 @@ with n2:
             f"color:#ebebf5;font-size:0.80em;font-weight:500'>{week_label}</div>"
         )
     else:
-        # value= 미사용 — session_state["date_picker"]로만 제어 (충돌 방지)
         picked = st.date_input(
             "날짜",
             label_visibility="collapsed",
@@ -318,18 +299,18 @@ with n3:
 
 st.html("<div style='height:8px;border-top:1px solid #1c1c1e;margin-top:6px'></div>")
 
-# ── Row 2: 국가 pill ──────────────────────────────────────────────────────────
+# ── Row 2: 국가 선택 ──────────────────────────────────────────────────────────
 sel = st.session_state.sel
 
-pill_cols = st.columns(len(COUNTRIES))
-for col, (flag, code, name) in zip(pill_cols, COUNTRIES):
-    with col:
-        btn_type = "primary" if code == sel else "secondary"
-        if st.button(f"{flag}\n{name}", key=f"p_{code}",
-                     use_container_width=True, type=btn_type):
-            st.session_state.sel = code
-            st.cache_data.clear()
-            st.rerun()
+country_labels = [f"{flag} {name}" for flag, _, name in COUNTRIES]
+country_codes  = [code for _, code, _ in COUNTRIES]
+cur_idx = country_codes.index(sel) if sel in country_codes else 0
+chosen = st.selectbox("국가", country_labels, index=cur_idx, label_visibility="collapsed")
+chosen_code = country_codes[country_labels.index(chosen)]
+if chosen_code != sel:
+    st.session_state.sel = chosen_code
+    st.cache_data.clear()
+    st.rerun()
 
 st.markdown("""
 <style>
@@ -337,6 +318,18 @@ div[data-testid="stHorizontalBlock"] {
   gap:6px !important; margin-bottom:0 !important;
 }
 div[data-testid="stHorizontalBlock"] > div { padding:0 !important; }
+
+/* 모바일에서 컬럼 가로 유지 */
+@media (max-width: 640px) {
+  [data-testid="stHorizontalBlock"] {
+    flex-direction:row !important;
+    flex-wrap:nowrap !important;
+  }
+  [data-testid="stHorizontalBlock"] > div {
+    min-width:0 !important;
+    flex:1 !important;
+  }
+}
 
 /* date_input 중앙 정렬 */
 div[data-testid="stDateInput"] { text-align:center !important; }

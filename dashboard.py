@@ -202,155 +202,151 @@ with st.sidebar:
     st.caption("🤖 AI 분석: `python main.py ai-rank`")
 
 # ---------------------------------------------------------------------------
-# 메인: 국가별 탭
+# 메인: 국가별 selectbox
 # ---------------------------------------------------------------------------
 st.title("🌏 국가별 주요 뉴스")
 
-tab_labels = [f"{flag} {name}" for flag, _, name in COUNTRIES]
-tabs = st.tabs(tab_labels)
+select_labels = [f"{flag} {name}" for flag, _, name in COUNTRIES]
+selected_label = st.selectbox("국가 선택", select_labels, label_visibility="collapsed")
+selected_idx = select_labels.index(selected_label)
+flag, code, name = COUNTRIES[selected_idx]
 
-for tab, (flag, code, name) in zip(tabs, COUNTRIES):
-    with tab:
-        stat    = load_country_stat(code)
-        passed  = stat["passed"]  or 0
-        total   = stat["total"]   or 0
-        ai_done = stat["ai_done"] or 0
-        official= stat["official"]or 0
-        rate    = passed / total * 100 if total else 0
+stat    = load_country_stat(code)
+passed  = stat["passed"]  or 0
+total   = stat["total"]   or 0
+ai_done = stat["ai_done"] or 0
+official= stat["official"]or 0
+rate    = passed / total * 100 if total else 0
 
-        # 탭 상단 메트릭
-        m1, m2, m3, m4, m5 = st.columns(5)
-        m1.metric("관련 기사",  f"{passed:,}건")
-        m2.metric("수집 기사",  f"{total:,}건")
-        m3.metric("필터 통과율", f"{rate:.0f}%")
-        m4.metric("AI 분석",   f"{ai_done:,}건")
-        m5.metric("공식기관",   f"{official:,}건")
+with st.expander("📊 관리 현황", expanded=False):
+    m1, m2, m3, m4, m5 = st.columns(5)
+    m1.metric("관련 기사",  f"{passed:,}건")
+    m2.metric("수집 기사",  f"{total:,}건")
+    m3.metric("필터 통과율", f"{rate:.0f}%")
+    m4.metric("AI 분석",   f"{ai_done:,}건")
+    m5.metric("공식기관",   f"{official:,}건")
 
-        st.divider()
+st.divider()
 
-        # ── 🏛 공식기관 보도자료 ──────────────────────────────────────────
-        official_arts = load_official_articles(code, limit=5)
-        if official_arts:
-            st.markdown("### 🏛 공식기관 최신 보도자료")
-            st.caption("중앙은행·금융감독기관의 공식 발표 (필터 자동 통과)")
-            for art in official_arts:
-                pub   = fmt_date(art["published_at"])
-                title = _e(art["title"] or "(제목 없음)")
-                href  = _e(art["link"]  or "#")
-                media = _e(art["media_name"] or "")
-                badge = score_badge(art.get("ai_score"))
-                sumko = _e(art.get("summary_ko") or "")
-                sumko_html = (
-                    f"<div style='color:#7fb99a;font-size:0.85em;line-height:1.5;"
-                    f"padding:6px 8px;background:#071a0e;border-radius:4px;margin-top:4px'>{sumko}</div>"
-                ) if sumko else ""
-                st.html(
-                    f"<div style='padding:12px 16px;margin-bottom:8px;background:#0d2b1a;"
-                    f"border-radius:8px;border-left:4px solid #1a6b3c;'>"
-                    f"<div style='display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap'>"
-                    f"<span style='background:#1a6b3c;color:#fff;font-size:0.70em;padding:2px 7px;"
-                    f"border-radius:10px;font-weight:700'>🏛 공식</span>"
-                    f"{badge}"
-                    f"<span style='color:#888;font-size:0.78em'>📌 {media} · 🕐 {pub}</span>"
-                    f"</div>"
-                    f"<a href='{href}' target='_blank' style='font-size:1.0em;font-weight:600;"
-                    f"color:#a8d8b9;text-decoration:none;line-height:1.4;display:block'>{title}</a>"
-                    f"{sumko_html}"
-                    f"</div>"
-                )
-            st.divider()
+# ── 🏛 공식기관 보도자료 ──────────────────────────────────────────
+official_arts = load_official_articles(code, limit=5)
+if official_arts:
+    st.markdown("### 🏛 공식기관 최신 보도자료")
+    st.caption("중앙은행·금융감독기관의 공식 발표 (필터 자동 통과)")
+    for art in official_arts:
+        pub   = fmt_date(art["published_at"])
+        title = _e(art["title"] or "(제목 없음)")
+        href  = _e(art["link"]  or "#")
+        media = _e(art["media_name"] or "")
+        badge = score_badge(art.get("ai_score"))
+        sumko = _e(art.get("summary_ko") or "")
+        sumko_html = (
+            f"<div style='color:#7fb99a;font-size:0.85em;line-height:1.5;"
+            f"padding:6px 8px;background:#071a0e;border-radius:4px;margin-top:4px'>{sumko}</div>"
+        ) if sumko else ""
+        st.html(
+            f"<div style='padding:12px 16px;margin-bottom:8px;background:#0d2b1a;"
+            f"border-radius:8px;border-left:4px solid #1a6b3c;'>"
+            f"<div style='display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap'>"
+            f"<span style='background:#1a6b3c;color:#fff;font-size:0.70em;padding:2px 7px;"
+            f"border-radius:10px;font-weight:700'>🏛 공식</span>"
+            f"{badge}"
+            f"<span style='color:#888;font-size:0.78em'>📌 {media} · 🕐 {pub}</span>"
+            f"</div>"
+            f"<a href='{href}' target='_blank' style='font-size:1.0em;font-weight:600;"
+            f"color:#a8d8b9;text-decoration:none;line-height:1.4;display:block'>{title}</a>"
+            f"{sumko_html}"
+            f"</div>"
+        )
+    st.divider()
 
-        # ── 🤖 AI 선별 주요 뉴스 TOP 10 ─────────────────────────────────────
-        ai_articles = load_ai_top(code, limit=10)
+# ── 🤖 AI 선별 주요 뉴스 TOP 10 ─────────────────────────────────────
+ai_articles = load_ai_top(code, limit=10)
 
-        if ai_articles:
-            st.markdown("### 🤖 AI 선별 주요 뉴스 TOP 10")
-            st.caption("Claude AI가 금융·경제 중요도를 평가하고 한글로 요약한 기사입니다.")
+if ai_articles:
+    st.markdown("### 🤖 AI 선별 주요 뉴스 TOP 10")
+    st.caption("Claude AI가 금융·경제 중요도를 평가하고 한글로 요약한 기사입니다.")
 
-            for i, art in enumerate(ai_articles, 1):
-                pub    = fmt_date(art["published_at"])
-                title  = _e(art["title"] or "(제목 없음)")
-                href   = _e(art["link"]  or "#")
-                media  = _e(art["media_name"] or "")
-                score  = art["ai_score"]
-                sumko  = _e(art["summary_ko"] or "")
-                color  = RANK_COLORS[i - 1]
-                badge  = score_badge(score)
-                offbdg = (
-                    "<span style='background:#1a6b3c;color:#fff;font-size:0.70em;"
-                    "padding:2px 7px;border-radius:10px;font-weight:700'>🏛 공식</span>"
-                ) if art.get("tier") == 0 else ""
-                sumko_html = (
-                    f"<div style='color:#b0c4de;font-size:0.88em;line-height:1.5;"
-                    f"padding:8px 10px;background:#0d1b2a;border-radius:6px;margin-top:6px'>{sumko}</div>"
-                ) if sumko else ""
-                st.html(
-                    f"<div style='padding:14px 18px;margin-bottom:10px;background:#16213e;"
-                    f"border-radius:10px;border-left:5px solid {color};'>"
-                    f"<div style='display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap'>"
-                    f"<span style='font-size:1.2em;font-weight:900;color:{color};min-width:24px'>{i}</span>"
-                    f"{offbdg}"
-                    f"{badge}"
-                    f"<span style='color:#888;font-size:0.78em'>📌 {media} · 🕐 {pub}</span>"
-                    f"</div>"
-                    f"<a href='{href}' target='_blank' style='font-size:1.03em;font-weight:600;"
-                    f"color:#dce8ff;text-decoration:none;line-height:1.45;display:block'>{title}</a>"
-                    f"{sumko_html}"
-                    f"</div>"
-                )
+    for i, art in enumerate(ai_articles, 1):
+        pub    = fmt_date(art["published_at"])
+        title  = _e(art["title"] or "(제목 없음)")
+        href   = _e(art["link"]  or "#")
+        media  = _e(art["media_name"] or "")
+        score  = art["ai_score"]
+        sumko  = _e(art["summary_ko"] or "")
+        color  = RANK_COLORS[i - 1]
+        badge  = score_badge(score)
+        offbdg = (
+            "<span style='background:#1a6b3c;color:#fff;font-size:0.70em;"
+            "padding:2px 7px;border-radius:10px;font-weight:700'>🏛 공식</span>"
+        ) if art.get("tier") == 0 else ""
+        sumko_html = (
+            f"<div style='color:#b0c4de;font-size:0.88em;line-height:1.5;"
+            f"padding:8px 10px;background:#0d1b2a;border-radius:6px;margin-top:6px'>{sumko}</div>"
+        ) if sumko else ""
+        st.html(
+            f"<div style='padding:14px 18px;margin-bottom:10px;background:#16213e;"
+            f"border-radius:10px;border-left:5px solid {color};'>"
+            f"<div style='display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap'>"
+            f"<span style='font-size:1.2em;font-weight:900;color:{color};min-width:24px'>{i}</span>"
+            f"{offbdg}"
+            f"{badge}"
+            f"<span style='color:#888;font-size:0.78em'>📌 {media} · 🕐 {pub}</span>"
+            f"</div>"
+            f"<a href='{href}' target='_blank' style='font-size:1.03em;font-weight:600;"
+            f"color:#dce8ff;text-decoration:none;line-height:1.45;display:block'>{title}</a>"
+            f"{sumko_html}"
+            f"</div>"
+        )
 
-        else:
-            st.info(
-                "🤖 AI 분석 데이터가 없습니다.  \n"
-                f"`python main.py ai-rank --country {code}` 를 실행하면 이 탭에 TOP 10이 표시됩니다.",
-                icon="💡",
-            )
+else:
+    st.info(
+        "🤖 AI 분석 데이터가 없습니다.  \n"
+        f"`python main.py ai-rank --country {code}` 를 실행하면 이 탭에 TOP 10이 표시됩니다.",
+        icon="💡",
+    )
 
-        st.divider()
+st.divider()
 
-        # ── 전체 기사 목록 + 매체별 현황 ─────────────────────────────────────
-        col_news, col_src = st.columns([3, 1])
+# ── 전체 기사 목록 ────────────────────────────────────────────────────
+if code == "KR":
+    st.markdown("#### 📋 한국 언론 국제 금융·경제 보도")
+    st.caption("연합뉴스·경제지 등 한국 주요 언론의 금융·경제 기사 (키워드 필터 통과)")
+else:
+    st.markdown("#### 📋 전체 기사 목록")
+all_articles = load_articles(code, limit=30)
+if not all_articles:
+    st.info("수집된 기사가 없습니다.")
+else:
+    for art in all_articles:
+        pub   = fmt_date(art["published_at"])
+        title = _e(art["title"] or "")
+        href  = _e(art["link"]  or "#")
+        media = _e(art["media_name"] or "")
+        badge = score_badge(art.get("ai_score"))
+        offbdg = (
+            "<span style='background:#1a6b3c;color:#fff;font-size:0.68em;"
+            "padding:1px 5px;border-radius:8px;font-weight:700'>🏛</span> "
+        ) if art.get("tier") == 0 else ""
+        st.html(
+            f"<div style='margin-bottom:2px'>"
+            f"<a href='{href}' target='_blank' style='font-weight:600;"
+            f"color:#dce8ff;text-decoration:none;line-height:1.5'>{title}</a>"
+            f"</div>"
+            f"<div style='color:#888;font-size:0.82em;margin-bottom:4px'>"
+            f"📌 {media} · 🕐 {pub} {offbdg}{badge}"
+            f"</div>"
+            f"<hr style='margin:6px 0;border:0;border-top:1px solid #2a2a2a'>"
+        )
 
-        with col_news:
-            if code == "KR":
-                st.markdown("#### 📋 한국 언론 국제 금융·경제 보도")
-                st.caption("연합뉴스·경제지 등 한국 주요 언론의 금융·경제 기사 (키워드 필터 통과)")
-            else:
-                st.markdown("#### 📋 전체 기사 목록")
-            all_articles = load_articles(code, limit=30)
-            if not all_articles:
-                st.info("수집된 기사가 없습니다.")
-            else:
-                for art in all_articles:
-                    pub   = fmt_date(art["published_at"])
-                    title = _e(art["title"] or "")
-                    href  = _e(art["link"]  or "#")
-                    media = _e(art["media_name"] or "")
-                    badge = score_badge(art.get("ai_score"))
-                    offbdg = (
-                        "<span style='background:#1a6b3c;color:#fff;font-size:0.68em;"
-                        "padding:1px 5px;border-radius:8px;font-weight:700'>🏛</span> "
-                    ) if art.get("tier") == 0 else ""
-                    st.html(
-                        f"<div style='margin-bottom:2px'>"
-                        f"<a href='{href}' target='_blank' style='font-weight:600;"
-                        f"color:#dce8ff;text-decoration:none;line-height:1.5'>{title}</a>"
-                        f"</div>"
-                        f"<div style='color:#888;font-size:0.82em;margin-bottom:4px'>"
-                        f"📌 {media} · 🕐 {pub} {offbdg}{badge}"
-                        f"</div>"
-                        f"<hr style='margin:6px 0;border:0;border-top:1px solid #2a2a2a'>"
-                    )
-
-        with col_src:
-            st.markdown("#### 매체별 현황")
-            sources = load_sources_for_country(code)
-            for s in sources:
-                p    = s["passed"]
-                t    = s["total"]
-                r    = p / t * 100 if t else 0
-                tier = s["tier"]
-                prefix = "🏛 " if tier == 0 else ""
-                st.markdown(f"**{prefix}{_e(s['media_name'])}**")
-                st.caption(f"{p:,}건 / {t:,}건 ({r:.0f}%)")
-                st.progress(min(r / 100, 1.0))
+with st.expander("📡 매체별 현황", expanded=False):
+    sources = load_sources_for_country(code)
+    for s in sources:
+        p    = s["passed"]
+        t    = s["total"]
+        r    = p / t * 100 if t else 0
+        tier = s["tier"]
+        prefix = "🏛 " if tier == 0 else ""
+        st.markdown(f"**{prefix}{_e(s['media_name'])}**")
+        st.caption(f"{p:,}건 / {t:,}건 ({r:.0f}%)")
+        st.progress(min(r / 100, 1.0))
