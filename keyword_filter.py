@@ -79,13 +79,14 @@ FINANCE_KEYWORDS: list[str] = [
     "yield curve", "treasury", "etf", "hedge fund", "private equity",
     "ipo", "listing", "delisting", "dividend", "earnings", "revenue", "profit",
     "forex", "exchange rate", "currency", "currency depreciation", "currency appreciation",
-    "share price", "shares", "equity shares",
+    "share price", "equity shares",
     # 기업·투자·거래
-    "deal", "trade deal", "merger", "acquisition", "m&a", "takeover", "joint venture",
+    "trade deal", "merger", "acquisition", "m&a", "takeover", "joint venture",
     "investment", "venture capital", "fdi", "foreign direct investment",
     "startup", "unicorn",
     "bankruptcy", "default", "restructuring", "privatization", "nationalization",
-    "subsidy", "tariff", "sanction", "trade war", "trade agreement", "trade",
+    "subsidy", "tariff", "sanction", "trade war", "trade agreement",
+    "trade balance", "trade surplus", "trade deficit", "trade volume",
     "supply chain", "export", "import", "current account",
     # 국제기구·고위직
     "imf", "world bank", "adb", "asian development bank",
@@ -165,14 +166,20 @@ COUNTRY_KEYWORDS: dict[str, list[str]] = {
     "KH": [
         "cambodia", "cambodian", "phnom penh", "siem reap",
         "cambodian riel", "riel", "khr",
-        "hun manet", "hun sen", "national bank of cambodia",
-        "prasac",
+        "hun manet", "hun sen", "national bank of cambodia", "nbc cambodia",
+        "prasac", "acleda", "aba bank", "wing money", "wing bank",
+        "bakong", "amret", "hattha", "canadia bank",
+        "cambodia development resource institute", "cdri",
+        "garment sector", "garment industry",
     ],
     "MM": [
         "myanmar", "burmese", "burma", "yangon", "naypyidaw", "mandalay",
         "myanmar kyat", "kyat", "mmk",
         "central bank of myanmar", "tatmadaw", "sac", "min aung hlaing",
-        "aung san suu kyi", "nld",
+        "aung san suu kyi", "nld", "nug",
+        "kbz bank", "aya bank", "myanmar economic bank", "meb",
+        "myanmar payment union", "mpu",
+        "myanmar sanctions", "myanmar economy",
     ],
     "IN": [
         "india", "indian", "new delhi", "mumbai", "bangalore", "bengaluru",
@@ -232,7 +239,20 @@ KOREAN_COUNTRY_KEYWORDS: dict[str, list[str]] = {
 }
 
 # ---------------------------------------------------------------------------
-# ④ 인도네시아어 금융·경제 키워드
+# ④ 베트남어 금융·경제 키워드
+# ---------------------------------------------------------------------------
+VIETNAMESE_FINANCE_KEYWORDS: list[str] = [
+    "ngân hàng", "ngân hàng nhà nước", "lãi suất", "tỷ giá",
+    "lạm phát", "tăng trưởng", "gdp", "kinh tế", "tài chính",
+    "đầu tư", "chứng khoán", "thị trường", "cổ phiếu", "trái phiếu",
+    "xuất khẩu", "nhập khẩu", "thương mại", "ngân sách", "thuế",
+    "doanh nghiệp", "vốn", "tín dụng", "nợ xấu", "lợi nhuận",
+    "fdi", "đồng việt nam", "vnd",
+    "sbv", "bidv", "vietcombank", "vietinbank", "agribank", "vpbank",
+]
+
+# ---------------------------------------------------------------------------
+# ⑤ 인도네시아어 금융·경제 키워드
 # ---------------------------------------------------------------------------
 INDONESIAN_FINANCE_KEYWORDS: list[str] = [
     "ekonomi", "keuangan", "moneter", "fiskal", "inflasi", "deflasi",
@@ -247,25 +267,33 @@ INDONESIAN_FINANCE_KEYWORDS: list[str] = [
 ]
 
 # ---------------------------------------------------------------------------
-# ⑤ 제외 키워드 — 스포츠·연예·순수과학
+# ⑥ 제외 키워드 — 스포츠·연예·순수과학
 # ---------------------------------------------------------------------------
 EXCLUSION_KEYWORDS: list[str] = [
+    # 스포츠
     "gold medal", "silver medal", "bronze medal",
     "powerlifter", "weightlift",
-    "sea games", "asian games",
-    "world cup qualifier",
+    "sea games", "asian games", "olympic",
+    "world cup qualifier", "world cup match",
     "hat trick", "penalty shootout", "clean sheet",
     "sumo",
     "tennis match", "cricket match", "badminton match",
+    "football match", "soccer match", "basketball game",
     "chess tournament", "chess championship",
+    # 연예·문화
     "box office", "music festival", "concert tour", "music album",
     "grammy award", "academy award", "film festival",
     "chart-topping", "chart topping",
+    "movie review", "book review", "art exhibition",
+    # 부고·인물
     "dies at", "passed away", "in memoriam", "obituary",
     "saxophonist", "violinist", "pianist", "conductor",
+    # 과학·자연
     "deep-sea", "new species", "newly discovered species",
     "paleontolog", "fossil discover",
     "marine biolog",
+    # bank 오탐 방지
+    "food bank", "blood bank", "seed bank", "eye bank",
 ]
 
 
@@ -420,6 +448,20 @@ def _apply_keyword_filter(
                     score += FINANCE_SCORE_BODY
                     if top_reason is None:
                         top_reason = f"id_fin_body:{id_b}"
+
+        # ── 베트남어 금융 키워드 ──────────────────────────────
+        if language == "vi":
+            vi_t = _first_match(title_text, VIETNAMESE_FINANCE_KEYWORDS)
+            if vi_t:
+                score += FINANCE_SCORE_TITLE
+                if top_reason is None:
+                    top_reason = f"vi_fin_title:{vi_t}"
+            else:
+                vi_b = _first_match(body_text, VIETNAMESE_FINANCE_KEYWORDS)
+                if vi_b:
+                    score += FINANCE_SCORE_BODY
+                    if top_reason is None:
+                        top_reason = f"vi_fin_body:{vi_b}"
 
         # ── 국가 키워드 (국가당 1회) ──────────────────────────
         for country, kws in COUNTRY_KEYWORDS.items():
