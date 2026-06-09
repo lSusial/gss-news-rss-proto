@@ -336,9 +336,22 @@ div[data-testid="stDateInput"] { text-align:center !important; }
 div[data-testid="stDateInput"] input { text-align:center !important; }
 div[data-testid="stDateInput"] > div { justify-content:center !important; }
 
-/* 모바일 자동 확대 방지 (input focus 시 zoom 억제) */
+/* 모바일 자동 확대 및 레이아웃 깨짐 방지 */
 input, select, textarea, [data-baseweb="select"] * {
   font-size:16px !important;
+}
+@media (max-width: 640px) {
+  html, body, .stApp,
+  [data-testid="stAppViewContainer"],
+  [data-testid="stMain"] {
+    overflow-x:hidden !important;
+    width:100% !important;
+    max-width:100vw !important;
+  }
+  .block-container {
+    padding-left:0.8rem !important;
+    padding-right:0.8rem !important;
+  }
 }
 </style>
 """, unsafe_allow_html=True)
