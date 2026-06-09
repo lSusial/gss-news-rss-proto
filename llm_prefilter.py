@@ -60,23 +60,25 @@ SYSTEM_PROMPT = """\
 - "trade" 예술품·유물 거래
 - "stock" 동물 개체수 감소
 
-아래 기사 목록에서 금융·경제와 무관한 기사의 ID만 JSON 배열로 반환하세요.
+아래 기사 목록에서 금융·경제와 무관한 기사를 JSON 형식으로 반환하세요.
 관련 있는 기사는 포함하지 마세요. 판단이 애매하면 포함(관련 있음으로 처리)하세요.
 
-응답 형식 (JSON 배열만, 다른 텍스트 없음):
-[3, 7, 12]
-(무관한 기사 없으면 빈 배열: [])
+응답 형식 (JSON만, 다른 텍스트 없음):
+{"rejected": [{"id": 3, "reason": "food bank 프로그램"}, {"id": 7, "reason": "스포츠 기사"}]}
+(무관한 기사 없으면: {"rejected": []})
 """
 
 
 def ensure_prefilter_column(conn: sqlite3.Connection) -> None:
     existing = {r["name"] for r in conn.execute("PRAGMA table_info(articles_raw)")}
-    if "llm_prefilter" not in existing:
-        conn.execute(
-            "ALTER TABLE articles_raw ADD COLUMN llm_prefilter TEXT"
-        )
-        conn.commit()
-        log.info("마이그레이션 완료: llm_prefilter 컬럼 추가")
+    for col, ddl in [
+        ("llm_prefilter",        "ALTER TABLE articles_raw ADD COLUMN llm_prefilter TEXT"),
+        ("llm_reject_reason",    "ALTER TABLE articles_raw ADD COLUMN llm_reject_reason TEXT"),
+    ]:
+        if col not in existing:
+            conn.execute(ddl)
+            log.info("마이그레이션 완료: %s 컬럼 추가", col)
+    conn.commit()
 
 
 def _build_user_message(articles: list[dict]) -> str:
@@ -88,28 +90,35 @@ def _build_user_message(articles: list[dict]) -> str:
     return "\n\n".join(lines)
 
 
-def _call_claude(client: anthropic.Anthropic, articles: list[dict]) -> list[int]:
-    """무관한 기사의 배치 내 인덱스(1-based) 목록 반환."""
+def _call_claude(client: anthropic.Anthropic, articles: list[dict]) -> list[dict]:
+    """무관한 기사의 배치 내 인덱스(1-based) + 이유 목록 반환.
+    Returns: [{"id": 3, "reason": "..."}, ...]
+    """
     user_msg = _build_user_message(articles)
     try:
         resp = client.messages.create(
             model=MODEL,
-            max_tokens=256,
+            max_tokens=512,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_msg}],
         )
         raw = resp.content[0].text.strip()
-        # 모델이 JSON 배열 앞뒤에 설명 텍스트를 붙이는 경우 배열만 추출
-        m = re.search(r"\[[\d\s,]*\]", raw)
+        # JSON 블록만 추출
+        m = re.search(r"\{.*\}", raw, re.DOTALL)
         if m:
             raw = m.group(0)
         elif "```" in raw:
-            raw = raw.split("```")[1]
-            if raw.startswith("json"):
-                raw = raw[4:]
-        result = json.loads(raw)
-        if isinstance(result, list):
-            return [int(x) for x in result if isinstance(x, (int, float))]
+            raw = re.sub(r"```(?:json)?", "", raw).strip()
+        parsed = json.loads(raw)
+        rejected = parsed.get("rejected", [])
+        if isinstance(rejected, list):
+            result = []
+            for item in rejected:
+                if isinstance(item, dict) and "id" in item:
+                    result.append({"id": int(item["id"]), "reason": str(item.get("reason", ""))[:100]})
+                elif isinstance(item, (int, float)):
+                    result.append({"id": int(item), "reason": ""})
+            return result
         return []
     except Exception as e:
         log.warning("LLM 관문 API 오류: %s — 배치 전부 통과 처리", e)
@@ -176,14 +185,23 @@ def run_llm_prefilter(
     cur = conn.cursor()
     for batch_start in range(0, len(rows), BATCH_SIZE):
         batch = [dict(r) for r in rows[batch_start: batch_start + BATCH_SIZE]]
-        irrelevant_ids = _call_claude(client, batch)   # 배치 내 1-based 인덱스
+        rejected_items = _call_claude(client, batch)   # [{"id":N, "reason":"..."}]
+        rejected_map = {item["id"]: item["reason"] for item in rejected_items}
 
         for i, art in enumerate(batch, 1):
-            decision = "rejected" if i in irrelevant_ids else "passed"
-            cur.execute(
-                "UPDATE articles_raw SET llm_prefilter = ? WHERE article_id = ?",
-                (decision, art["article_id"]),
-            )
+            if i in rejected_map:
+                decision = "rejected"
+                reason = rejected_map[i]
+                cur.execute(
+                    "UPDATE articles_raw SET llm_prefilter = ?, llm_reject_reason = ? WHERE article_id = ?",
+                    (decision, reason, art["article_id"]),
+                )
+            else:
+                decision = "passed"
+                cur.execute(
+                    "UPDATE articles_raw SET llm_prefilter = ? WHERE article_id = ?",
+                    (decision, art["article_id"]),
+                )
             stats[decision] += 1
 
         conn.commit()

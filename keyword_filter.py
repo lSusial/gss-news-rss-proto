@@ -42,7 +42,8 @@ FINANCE_SCORE_BODY   =  3   # 금융·ESG 키워드가 본문에서 히트
 COUNTRY_SCORE_TITLE  =  2   # 국가 키워드가 제목에서 히트 (국가당 1회)
 COUNTRY_SCORE_BODY   =  1   # 국가 키워드가 본문에서 히트 (국가당 1회)
 EXCLUSION_SCORE      = -4   # 스포츠·연예 제외 키워드 히트당
-PASS_THRESHOLD       =  3   # ≥3 이면 passed
+PASS_THRESHOLD       =  3   # ≥3 이면 passed (제목 금융 히트 단독으로 통과)
+BODY_ONLY_THRESHOLD  =  5   # 제목 금융 키워드 없이 본문만 히트 시 더 높은 기준
 
 # 중복 탐지
 DEDUP_THRESHOLD      = 0.60  # 제목 유사도 임계값 (SequenceMatcher ratio)
@@ -111,6 +112,16 @@ FINANCE_KEYWORDS: list[str] = [
     "electric vehicle", "new energy vehicle", "energy transition", "energy storage",
     "solar power", "wind power", "clean energy",
     "nev sales", "ev market", "ev sales",
+    # 은행 건전성·감독
+    "non-performing loan", "npl ratio", "npl",
+    "capital adequacy", "capital ratio", "tier 1 capital",
+    "basel", "stress test", "bank run", "bank crisis", "bank failure",
+    "financial stability board", "fsb",
+    "loan-to-deposit", "liquidity ratio", "solvency",
+    # 디지털금융·포용금융
+    "digital banking", "mobile banking", "digital payment",
+    "financial inclusion", "correspondent banking",
+    "payment system", "real-time payment", "cross-border payment",
     # 규제·정책·핀테크
     "regulation", "deregulation", "compliance", "antitrust",
     "fintech", "digital asset", "cryptocurren", "bitcoin", "blockchain",
@@ -292,8 +303,15 @@ EXCLUSION_KEYWORDS: list[str] = [
     "deep-sea", "new species", "newly discovered species",
     "paleontolog", "fossil discover",
     "marine biolog",
-    # bank 오탐 방지
+    # bank 비금융 오탐 방지
     "food bank", "blood bank", "seed bank", "eye bank",
+    "river bank", "bank erosion", "bank robbery", "bank heist",
+    "bank holiday", "piggy bank", "memory bank",
+    # investment 비금융 오탐
+    "investment in education", "investment in health", "investment in sport",
+    # 기타 비금융 맥락
+    "trade show", "trade fair", "trade expo", "trade union",
+    "budget airline", "budget hotel", "budget travel",
 ]
 
 
@@ -394,6 +412,7 @@ def _apply_keyword_filter(
 
     score = 0
     top_reason: str | None = None
+    title_finance_hit = False  # 제목에 금융 키워드 히트 여부
 
     # ── 제외 키워드 (전체 텍스트 대상) ──────────────────────
     excl_hit = _first_match(full_text, EXCLUSION_KEYWORDS)
@@ -405,6 +424,7 @@ def _apply_keyword_filter(
         fin_t = _first_match(title_text, KOREAN_FINANCE_KEYWORDS)
         if fin_t:
             score += FINANCE_SCORE_TITLE
+            title_finance_hit = True
             top_reason = f"ko_fin_title:{fin_t}"
         else:
             fin_b = _first_match(body_text, KOREAN_FINANCE_KEYWORDS)
@@ -428,6 +448,7 @@ def _apply_keyword_filter(
         fin_t = _first_match(title_text, FINANCE_KEYWORDS)
         if fin_t:
             score += FINANCE_SCORE_TITLE
+            title_finance_hit = True
             top_reason = f"fin_title:{fin_t}"
         else:
             fin_b = _first_match(body_text, FINANCE_KEYWORDS)
@@ -475,7 +496,9 @@ def _apply_keyword_filter(
                     top_reason = f"country_body:{country}"
 
     # ── 판정 ─────────────────────────────────────────────────
-    if score >= PASS_THRESHOLD:
+    # 제목에 금융 키워드가 없으면(body-only) 더 높은 기준 적용 → 오탐 감소
+    threshold = PASS_THRESHOLD if title_finance_hit else BODY_ONLY_THRESHOLD
+    if score >= threshold:
         return "passed", top_reason or "passed", score
     else:
         if excl_hit:
