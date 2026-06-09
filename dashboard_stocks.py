@@ -335,6 +335,11 @@ div[data-testid="stHorizontalBlock"] > div { padding:0 !important; }
 div[data-testid="stDateInput"] { text-align:center !important; }
 div[data-testid="stDateInput"] input { text-align:center !important; }
 div[data-testid="stDateInput"] > div { justify-content:center !important; }
+
+/* 모바일 자동 확대 방지 (input focus 시 zoom 억제) */
+input, select, textarea, [data-baseweb="select"] * {
+  font-size:16px !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
