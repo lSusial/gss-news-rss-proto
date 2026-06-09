@@ -136,7 +136,7 @@ def load_feed(code: str, sel_date: str | None = None, limit: int = 40) -> list[d
     rows = conn.execute(f"""
         SELECT m.media_name, m.tier, m.primary_country_code AS cc,
                a.title, a.link, a.published_at, a.fetched_at,
-               a.ai_score, a.summary_ko, a.filter_reason
+               a.ai_score, a.summary_ko, a.filter_reason, a.topics
         FROM articles_raw a
         JOIN media_sources m ON m.source_id = a.source_id
         WHERE a.filter_decision = 'passed'
@@ -530,6 +530,20 @@ else:
             f"{sumko}</div>"
         ) if sumko else ""
 
+        # 토픽 태그 (최대 3개)
+        try:
+            import json as _json
+            raw_topics = art.get("topics") or "[]"
+            topics = _json.loads(raw_topics)[:3]
+        except Exception:
+            topics = []
+        tags_html = "".join(
+            f"<span style='background:#2c2c2e;color:#ebebf5;font-size:0.60em;"
+            f"padding:1px 6px;border-radius:99px;margin-left:5px;"
+            f"white-space:nowrap'>{_e(t)}</span>"
+            for t in topics
+        )
+
         rows_html += (
             f"<a href='{href}' target='_blank' style='text-decoration:none;display:block'>"
             f"<div style='display:flex;gap:12px;padding:13px 0;"
@@ -537,19 +551,20 @@ else:
             f"transition:opacity 0.12s'"
             f"onmouseover=\"this.style.opacity='0.75'\""
             f"onmouseout=\"this.style.opacity='1'\">"
-            # 왼쪽 색상 점
             f"<div style='padding-top:4px;flex-shrink:0'>"
             f"<span style='display:block;width:7px;height:7px;border-radius:50%;"
             f"background:{dot_color}'></span>"
             f"</div>"
-            # 본문
             f"<div style='flex:1;min-width:0'>"
             f"<div style='display:flex;justify-content:space-between;"
             f"align-items:center;margin-bottom:3px'>"
+            f"<span style='display:flex;align-items:center;flex-wrap:wrap;gap:0'>"
             f"<span style='font-size:0.65em;font-weight:600;color:#636366;"
             f"letter-spacing:0.4px'>{cc_tag}{media}</span>"
+            f"{tags_html}"
+            f"</span>"
             f"<span style='font-size:0.65em;color:#48484a;margin-left:8px;"
-            f"white-space:nowrap'>{pub}</span>"
+            f"white-space:nowrap;flex-shrink:0'>{pub}</span>"
             f"</div>"
             f"<div style='font-size:0.92em;font-weight:500;color:#fff;line-height:1.5'>"
             f"{title}</div>"
