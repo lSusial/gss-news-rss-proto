@@ -183,9 +183,12 @@ def fmt_time(iso: str | None) -> str:
 # ── 세션 ──────────────────────────────────────────────────────────────────────
 today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 yesterday_str = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+_today = datetime.now(timezone.utc).date()
+_last_monday = (_today - timedelta(days=_today.weekday()) - timedelta(days=7)).isoformat()
+
 if "sel"        not in st.session_state: st.session_state.sel        = "US"
 if "brief_type" not in st.session_state: st.session_state.brief_type = "weekly"
-if "sel_date"   not in st.session_state: st.session_state.sel_date   = yesterday_str
+if "sel_date"   not in st.session_state: st.session_state.sel_date   = _last_monday
 
 # ── 헤더 ──────────────────────────────────────────────────────────────────────
 today_disp = datetime.now(timezone.utc).strftime("%Y. %-m. %-d.")
