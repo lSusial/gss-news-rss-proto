@@ -1,7 +1,7 @@
 # GLB News RSS — 현황 보고서
 
 > 프로토타입 구성 및 개선 작업 통합 정리
-> 최초 작성: 2026-05-29 / 최종 업데이트: 2026-06-08
+> 최초 작성: 2026-05-29 / 최종 업데이트: 2026-06-09
 > 대상 경로: `/prototype/`
 
 ---
@@ -195,7 +195,14 @@ python main.py export articles.json
 ### 날짜 네비게이션
 - `◀ [날짜선택기] ▶` — 일일: 1일씩, 주간: 1주씩 이동
 - 실시간 선택 시 날짜 선택 비활성화
-- 기본값: 어제 (전날 기사 기준)
+- 기본값: 주간 → **전주 월요일**, 일일 → 어제
+
+### 모바일 UI 개선 (2026-06-09)
+- 국가 선택: pill 버튼 → **드롭다운(selectbox)** 으로 교체
+- 뷰 타입 버튼(주간/일일/실시간)과 날짜 네비를 각각 별도 줄로 분리
+- 모바일에서 컬럼이 세로로 쌓이는 문제 CSS로 해결 (`flex-direction: row`)
+- 입력 포커스 시 자동 확대 방지 (`font-size: 16px`)
+- 수집 건수·필터 통과율 등 관리 정보를 **접힌 expander로 숨김** (일반 사용자 노출 제거)
 
 ### 기사 색상 점
 
@@ -209,7 +216,24 @@ python main.py export articles.json
 
 ---
 
-## 9. HTML 스냅샷 / 배포
+## 9. 운영 서버 (Oracle Cloud)
+
+- 서버: Oracle Cloud 무료 티어 Ubuntu (`/home/ubuntu/gss-news-rss-proto`)
+- 배포 방식: `git push` → 서버에서 `git pull`
+- 자동화: `run_pipeline.sh` crontab 등록 (한국 시간 06:00 = UTC 21:00)
+  ```
+  0 21 * * * /home/ubuntu/gss-news-rss-proto/run_pipeline.sh >> /home/ubuntu/glbnews.log 2>&1
+  ```
+- 특정 국가 재실행:
+  ```bash
+  python main.py llm-filter --country MM
+  python main.py ai-rank --country MM
+  python main.py brief --country MM --type daily --date YYYY-MM-DD
+  ```
+
+---
+
+## 10. HTML 스냅샷 / 배포
 
 ```
 data/html/
@@ -223,7 +247,7 @@ data/html/
 
 ---
 
-## 10. 현재 DB 데이터 현황 (2026-06-08 기준)
+## 11. 현재 DB 데이터 현황 (2026-06-08 기준)
 
 | 항목 | 수치 |
 |---|---|
@@ -237,7 +261,7 @@ data/html/
 
 ---
 
-## 11. 예상 운영 비용 (30명 기준)
+## 12. 예상 운영 비용 (30명 기준)
 
 | 항목 | 월 비용 |
 |---|---|
@@ -248,10 +272,10 @@ data/html/
 
 ---
 
-## 12. 다음 과제
+## 13. 다음 과제
 
 ### 자동화
-- macOS launchd 또는 AWS EventBridge로 매일 새벽 파이프라인 자동 실행
+- ~~macOS launchd 또는 AWS EventBridge로 매일 새벽 파이프라인 자동 실행~~ → **완료** (Oracle Cloud 서버 cron 등록, 한국 시간 06:00, `run_pipeline.sh` git 관리)
 
 ### 기능
 - 토픽 태그 기반 대시보드 필터링 (태그 클릭 → 관련 기사)
@@ -264,4 +288,4 @@ data/html/
 
 ---
 
-*최종 업데이트: 2026-06-08*
+*최종 업데이트: 2026-06-09*
