@@ -33,6 +33,7 @@ USER_AGENT = (
 )
 REQUEST_TIMEOUT_SEC = 20
 MAX_PARALLEL_FETCH = 8
+RETRY_DELAYS = (1, 3)  # 실패 시 재시도 대기(초): 1회→1s, 2회→3s
 
 # certifi 번들을 명시적으로 사용 — macOS 시스템 Python의 SSL 인증서 미설치 회피.
 _CA_BUNDLE = certifi.where()
@@ -186,18 +187,35 @@ def fetch_feed(feed_id: int, source_id: int, url: str) -> tuple[FetchResult, lis
         "Accept": "application/rss+xml, application/atom+xml, application/xml;q=0.9, */*;q=0.5",
         "Accept-Language": "en-US,en;q=0.9,ko;q=0.8",
     }
-    try:
-        resp = requests.get(
-            url,
-            headers=headers,
-            timeout=REQUEST_TIMEOUT_SEC,
-            verify=_CA_BUNDLE,
-            allow_redirects=True,
-        )
-    except requests.exceptions.SSLError as e:
-        return FetchResult(feed_id, url, -1, error=f"ssl_error: {e!r}"[:200]), []
-    except requests.exceptions.RequestException as e:
-        return FetchResult(feed_id, url, -1, error=f"request_error: {e!r}"[:200]), []
+    last_err: str | None = None
+    resp = None
+    for attempt, delay in enumerate([-1] + list(RETRY_DELAYS)):
+        if delay >= 0:
+            time.sleep(delay)
+        try:
+            resp = requests.get(
+                url,
+                headers=headers,
+                timeout=REQUEST_TIMEOUT_SEC,
+                verify=_CA_BUNDLE,
+                allow_redirects=True,
+            )
+        except requests.exceptions.SSLError as e:
+            # SSL 오류는 재시도해도 해결 안 됨
+            return FetchResult(feed_id, url, -1, error=f"ssl_error: {e!r}"[:200]), []
+        except requests.exceptions.RequestException as e:
+            last_err = f"request_error: {e!r}"[:200]
+            log.debug("retry %d/%d  %s  (%s)", attempt + 1, len(RETRY_DELAYS) + 1, url, last_err[:60])
+            continue
+
+        if resp.status_code >= 500:
+            last_err = f"http {resp.status_code}"
+            log.debug("retry %d/%d  %s  (%s)", attempt + 1, len(RETRY_DELAYS) + 1, url, last_err)
+            continue
+
+        break  # 성공 또는 4xx(재시도 불필요)
+    else:
+        return FetchResult(feed_id, url, -1, error=last_err or "unknown"), []
 
     status = resp.status_code
     if status >= 400:
