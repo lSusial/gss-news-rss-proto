@@ -55,7 +55,11 @@ section.main > div { background:#000 !important; }
 [data-testid="stMetricValue"] { color:#fff !important; font-size:1.25em !important; font-weight:700 !important; }
 [data-testid="stMetricDelta"] { display:none !important; }
 
-[data-testid="stSidebarNav"],[data-testid="stSidebar"] { display:none !important; }
+[data-testid="stSidebarNav"],[data-testid="stSidebar"],
+header[data-testid="stHeader"],
+[data-testid="collapsedControl"],
+[data-testid="stMainMenu"],
+footer { display:none !important; }
 hr { border-color:#1c1c1e !important; }
 summary p { color:#636366 !important; font-size:0.80em !important; }
 

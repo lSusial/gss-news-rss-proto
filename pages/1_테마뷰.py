@@ -26,15 +26,39 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-.stApp,[data-testid="stAppViewContainer"],[data-testid="stHeader"] {
+.stApp,[data-testid="stAppViewContainer"],
+[data-testid="stHeader"],[data-testid="stToolbar"] {
   background:#000 !important;
 }
 section.main > div { background:#000 !important; }
 .block-container { max-width:1300px; padding:0 1.2rem 3rem; margin:auto; }
-[data-testid="stSidebarNav"],[data-testid="stSidebar"] { display:none !important; }
+[data-testid="stSidebarNav"],[data-testid="stSidebar"],
+header[data-testid="stHeader"],
+[data-testid="collapsedControl"],
+[data-testid="stMainMenu"],
+footer { display:none !important; }
 hr { border-color:#1c1c1e !important; }
 div[data-testid="stHorizontalBlock"] { gap:6px !important; margin-bottom:0 !important; }
 div[data-testid="stHorizontalBlock"] > div { padding:0 !important; }
+
+/* 모바일: 컬럼 세로 쌓임 방지 + 자동 확대 방지 + 가로 스크롤 방지 */
+@media (max-width: 640px) {
+  [data-testid="stHorizontalBlock"] {
+    flex-direction:row !important; flex-wrap:nowrap !important;
+  }
+  [data-testid="stHorizontalBlock"] > div {
+    min-width:0 !important; flex:1 !important;
+  }
+  html, body, .stApp,
+  [data-testid="stAppViewContainer"],
+  [data-testid="stMain"] {
+    overflow-x:hidden !important; width:100% !important; max-width:100vw !important;
+  }
+  .block-container {
+    padding-left:0.8rem !important; padding-right:0.8rem !important;
+  }
+}
+input, select, textarea, [data-baseweb="select"] * { font-size:16px !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -109,7 +133,7 @@ def load_theme(theme_key: str, since_date: str, min_score: int, limit: int) -> l
           AND a.duplicate_of IS NULL
           AND (a.llm_prefilter IS NULL OR a.llm_prefilter = 'passed')
           AND ({topic_conds} OR {title_conds} OR {reason_conds})
-          AND DATE(COALESCE(a.published_at, a.fetched_at)) >= ?
+          AND DATE(datetime(COALESCE(a.published_at, a.fetched_at), '+9 hours')) >= ?
           AND a.ai_score >= ?
         ORDER BY a.ai_score DESC, a.published_at DESC NULLS LAST
         LIMIT ?
@@ -175,7 +199,7 @@ def render_articles(articles: list[dict], theme_color: str) -> str:
             f"<span style='font-size:0.63em;color:#48484a'>{pub}</span>"
             f"</div>"
             f"<div style='font-size:0.88em;font-weight:500;color:#fff;line-height:1.45;margin-bottom:4px'>{title}</div>"
-            f"{'<div style=font-size:0.78em;color:#8e8e93;line-height:1.5;margin-bottom:5px>' + sumko + '</div>' if sumko else ''}"
+            f"{'<div style=\"font-size:0.78em;color:#8e8e93;line-height:1.5;margin-bottom:5px\">' + sumko + '</div>' if sumko else ''}"
             f"{'<div>' + tags_html + '</div>' if tags_html else ''}"
             f"</div></div></a>"
         )
@@ -240,7 +264,7 @@ for col, theme_key in zip([col_esg, col_reg, col_risk], ["esg", "regulation", "r
         st.html(render_articles(articles, th["color"]))
 
 # ── 새로고침 ──────────────────────────────────────────────────────────────────
-st.html("<div style='height:8px'>")
+st.html("<div style='height:8px'></div>")
 st.divider()
 if st.button("↻  새로고침", use_container_width=False):
     st.cache_data.clear()
