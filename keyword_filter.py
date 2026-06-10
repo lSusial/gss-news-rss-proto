@@ -47,7 +47,7 @@ PASS_THRESHOLD       =  3   # ≥3 이면 passed (제목 금융 히트 단독으
 BODY_ONLY_THRESHOLD  =  5   # 제목 금융 키워드 없이 본문만 히트 시 더 높은 기준
 
 # 중복 탐지
-DEDUP_THRESHOLD      = 0.60  # 제목 유사도 임계값 (SequenceMatcher ratio)
+DEDUP_THRESHOLD      = 0.75  # 제목 유사도 임계값 (0.60은 "rate hike" vs "rate hold" 같은 다른 기사도 합침)
 
 # 레거시 호환 (report 등에서 참조)
 FINANCE_SCORE  = FINANCE_SCORE_BODY
@@ -587,7 +587,7 @@ def run_dedup(conn: sqlite3.Connection, recheck: bool = False) -> dict:
     cond = "" if recheck else "AND a.duplicate_of IS NULL"
     rows = conn.execute(f"""
         SELECT a.article_id, a.title,
-               COALESCE(SUBSTR(a.published_at, 1, 10), SUBSTR(a.fetched_at, 1, 10)) AS art_date,
+               DATE(datetime(COALESCE(a.published_at, a.fetched_at), '+9 hours')) AS art_date,
                m.primary_country_code AS cc,
                m.tier
         FROM articles_raw a

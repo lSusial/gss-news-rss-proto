@@ -387,8 +387,6 @@ render();
 
 def build_index(entries: list[tuple[str, str, str]]) -> str:
     """entries: [(brief_date, brief_type, filename), ...]"""
-    from itertools import groupby
-
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
     # 날짜별로 그룹핑
@@ -503,9 +501,9 @@ def main():
     print(f"📁 출력 폴더: {HTML_DIR}")
     print()
     print("📤 Netlify Drop 배포:")
-    print(f"   1. https://app.netlify.com/drop 접속")
+    print("   1. https://app.netlify.com/drop 접속")
     print(f"   2. {HTML_DIR} 폴더를 드래그 앤 드롭")
-    print(f"   3. 즉시 공개 URL 발급")
+    print("   3. 즉시 공개 URL 발급")
 
 
 if __name__ == "__main__":

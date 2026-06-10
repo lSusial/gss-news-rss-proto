@@ -132,7 +132,7 @@ def load_available_dates(code: str, brief_type: str) -> list[str]:
 @st.cache_data(ttl=60)
 def load_feed(code: str, sel_date: str | None = None, limit: int = 40) -> list[dict]:
     where_cc   = "AND m.primary_country_code = ?" if code != "GLOBAL" else ""
-    where_date = "AND DATE(COALESCE(a.published_at, a.fetched_at)) = ?" if sel_date else ""
+    where_date = "AND DATE(datetime(COALESCE(a.published_at, a.fetched_at), '+9 hours')) = ?" if sel_date else ""
     cc_param   = [code]     if code != "GLOBAL" else []
     date_param = [sel_date] if sel_date         else []
     params     = [*cc_param, *date_param, limit]

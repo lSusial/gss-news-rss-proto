@@ -90,7 +90,7 @@ def _build_user_message(articles: list[dict]) -> str:
     return "\n\n".join(lines)
 
 
-def _call_claude(client: anthropic.Anthropic, articles: list[dict]) -> list[dict]:
+def _call_claude(client: anthropic.Anthropic, articles: list[dict]) -> list[dict] | None:
     """무관한 기사의 배치 내 인덱스(1-based) + 이유 목록 반환.
     Returns: [{"id": 3, "reason": "..."}, ...]
     """
@@ -121,8 +121,8 @@ def _call_claude(client: anthropic.Anthropic, articles: list[dict]) -> list[dict
             return result
         return []
     except Exception as e:
-        log.warning("LLM 관문 API 오류: %s — 배치 전부 통과 처리", e)
-        return []  # 오류 시 전부 통과시켜 안전하게 처리
+        log.warning("LLM 관문 API 오류: %s — 배치 건너뜀 (다음 실행에서 재처리)", e)
+        return None  # None → 호출자가 skip, llm_prefilter=NULL 유지
 
 
 def run_llm_prefilter(
@@ -184,9 +184,19 @@ def run_llm_prefilter(
 
     cur = conn.cursor()
     for batch_start in range(0, len(rows), BATCH_SIZE):
-        batch        = [dict(r) for r in rows[batch_start: batch_start + BATCH_SIZE]]
+        batch          = [dict(r) for r in rows[batch_start: batch_start + BATCH_SIZE]]
         rejected_items = _call_claude(client, batch)
-        rejected_map   = {item["id"]: item["reason"] for item in rejected_items}
+
+        if rejected_items is None:
+            # API 오류 — llm_prefilter=NULL 유지, 다음 실행에서 재처리
+            stats["skipped"] += len(batch)
+            log.info("  배치 %d-%d — API 오류로 건너뜀 (%d건)",
+                     batch_start + 1, batch_start + len(batch), len(batch))
+            if batch_start + BATCH_SIZE < len(rows):
+                time.sleep(RATE_DELAY)
+            continue
+
+        rejected_map = {item["id"]: item["reason"] for item in rejected_items}
 
         for i, art in enumerate(batch, 1):
             if i in rejected_map:

@@ -187,16 +187,17 @@ def run_briefing(
         # 기본값: 어제 — 새벽 실행 시 전날 기사를 기준으로 브리핑 생성
         briefing_date = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
 
-    # 날짜 필터 구성 (파라미터 바인딩으로 SQL injection 방지)
+    # 날짜 필터 구성 (파라미터 바인딩 + KST 보정: DB는 UTC, 브리핑 날짜는 KST 기준)
+    _kst = "datetime(COALESCE(a.published_at, a.fetched_at), '+9 hours')"
     if briefing_type == "daily":
-        date_sql    = "AND DATE(COALESCE(a.published_at, a.fetched_at)) = ?"
+        date_sql    = f"AND DATE({_kst}) = ?"
         date_params = [briefing_date]
         min_articles = 2
     else:
         week_mon      = _week_monday(briefing_date)
         week_sun      = _week_sunday(briefing_date)
         briefing_date = week_mon   # DB 저장 키를 월요일로 통일
-        date_sql    = "AND DATE(COALESCE(a.published_at, a.fetched_at)) BETWEEN ? AND ?"
+        date_sql    = f"AND DATE({_kst}) BETWEEN ? AND ?"
         date_params = [week_mon, week_sun]
         min_articles = 3
 

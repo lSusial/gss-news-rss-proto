@@ -19,7 +19,6 @@ import time
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
-from typing import Iterable
 
 import certifi
 import feedparser
