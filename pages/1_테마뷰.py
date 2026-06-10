@@ -211,14 +211,11 @@ def render_articles(articles: list[dict], theme_color: str) -> str:
 
 
 # ── 헤더 ──────────────────────────────────────────────────────────────────────
-today_str = datetime.now(timezone.utc).strftime("%Y. %-m. %-d.")
-h1, h2, h3 = st.columns([3, 1, 1])
+h1, h2, h3 = st.columns([1, 2, 2])
 with h1:
-    st.html(f"""
-    <div style='padding:14px 0 6px;display:flex;align-items:center;gap:12px'>
-      <span style='font-size:1.35em;font-weight:700;color:#fff;letter-spacing:-0.5px'>GLB News</span>
-      <span style='font-size:0.75em;color:#636366'>테마뷰</span>
-      <span style='font-size:0.72em;color:#636366;margin-left:auto'>{today_str}</span>
+    st.html("""
+    <div style='padding:10px 0 4px;display:flex;align-items:center'>
+      <span style='font-size:1.7em;line-height:1'>🌐</span>
     </div>
     """)
 with h2:

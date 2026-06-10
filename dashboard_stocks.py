@@ -218,13 +218,11 @@ if "brief_type" not in st.session_state: st.session_state.brief_type = "weekly"
 if "sel_date"   not in st.session_state: st.session_state.sel_date   = _last_monday
 
 # ── 헤더 ──────────────────────────────────────────────────────────────────────
-today_disp = datetime.now(timezone.utc).strftime("%Y. %-m. %-d.")
-h1, h2, h3 = st.columns([3, 1, 1])
+h1, h2, h3 = st.columns([1, 2, 2])
 with h1:
-    st.html(f"""
-    <div style="padding:14px 0 6px;display:flex;align-items:center;gap:12px">
-      <span style="font-size:1.35em;font-weight:700;color:#fff;letter-spacing:-0.5px">GLB News</span>
-      <span style="font-size:0.72em;color:#636366">{today_disp}</span>
+    st.html("""
+    <div style="padding:10px 0 4px;display:flex;align-items:center">
+      <span style="font-size:1.7em;line-height:1">🌐</span>
     </div>
     """)
 with h2:
