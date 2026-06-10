@@ -206,11 +206,10 @@ def run_llm_prefilter(
 
         conn.commit()
 
-        rej = len(irrelevant_ids)
         log.info(
             "  배치 %d-%d — 거부 %d건 / %d건",
             batch_start + 1, batch_start + len(batch),
-            rej, len(batch),
+            len(rejected_items), len(batch),
         )
 
         if batch_start + BATCH_SIZE < len(rows):

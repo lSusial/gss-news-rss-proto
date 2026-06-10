@@ -516,7 +516,7 @@ sources:
         url: https://news.google.com/rss/search?q=site:vtv.vn+when:1d&hl=en-US&gl=US&ceid=US:en
 
   # ============================================================
-  # 캄보디아 (6) — Tier 2
+  # 캄보디아 (7) — Tier 2
   # ============================================================
   - media_name: Phnom Penh Post
     country: KH
@@ -525,7 +525,7 @@ sources:
     categories: [KH]
     feeds:
       - section: top
-        url: https://news.google.com/rss/search?q=site:phnompenhpost.com+when:7d&hl=en-US&gl=US&ceid=US:en
+        url: https://news.google.com/rss/search?q=site:phnompenhpost.com+when:2d&hl=en-US&gl=US&ceid=US:en
 
   - media_name: Khmer Times
     country: KH
@@ -535,7 +535,7 @@ sources:
     feeds:
       # khmertimeskh.com/feed/ → 403 차단 → Google News 우회
       - section: top
-        url: https://news.google.com/rss/search?q=site:khmertimeskh.com+when:7d&hl=en-US&gl=US&ceid=US:en
+        url: https://news.google.com/rss/search?q=site:khmertimeskh.com+when:2d&hl=en-US&gl=US&ceid=US:en
 
   - media_name: Cambodianess
     country: KH
@@ -544,7 +544,7 @@ sources:
     categories: [KH]
     feeds:
       - section: top
-        url: https://news.google.com/rss/search?q=site:cambodianess.com+when:7d&hl=en-US&gl=US&ceid=US:en
+        url: https://news.google.com/rss/search?q=site:cambodianess.com+when:2d&hl=en-US&gl=US&ceid=US:en
 
   - media_name: AKP
     country: KH
@@ -553,7 +553,7 @@ sources:
     categories: [KH]
     feeds:
       - section: top
-        url: https://news.google.com/rss/search?q=site:akp.gov.kh+when:7d&hl=en-US&gl=US&ceid=US:en
+        url: https://news.google.com/rss/search?q=site:akp.gov.kh+when:2d&hl=en-US&gl=US&ceid=US:en
 
   - media_name: Kiripost
     country: KH
@@ -563,10 +563,28 @@ sources:
     feeds:
       # kiripost.com/rss.xml → XML invalid token 오류 → Google News 우회
       - section: top
-        url: https://news.google.com/rss/search?q=site:kiripost.com+when:7d&hl=en-US&gl=US&ceid=US:en
+        url: https://news.google.com/rss/search?q=site:kiripost.com+when:2d&hl=en-US&gl=US&ceid=US:en
+
+  - media_name: The Diplomat (Cambodia)
+    country: KH
+    language: en
+    tier: 1
+    categories: [KH]
+    feeds:
+      - section: top
+        url: https://news.google.com/rss/search?q=site:thediplomat.com+cambodia&hl=en-US&gl=US&ceid=US:en
+
+  - media_name: Nikkei Asia (Cambodia)
+    country: KH
+    language: en
+    tier: 1
+    categories: [KH]
+    feeds:
+      - section: top
+        url: https://news.google.com/rss/search?q=site:asia.nikkei.com+cambodia&hl=en-US&gl=US&ceid=US:en
 
   # ============================================================
-  # 미얀마 (6) — Tier 2
+  # 미얀마 (7) — Tier 2
   # ============================================================
   - media_name: The Irrawaddy
     country: MM
@@ -576,7 +594,7 @@ sources:
     feeds:
       # irrawaddy.com/feed → 403 차단 → Google News 우회
       - section: top
-        url: https://news.google.com/rss/search?q=site:irrawaddy.com+when:7d&hl=en-US&gl=US&ceid=US:en
+        url: https://news.google.com/rss/search?q=site:irrawaddy.com+when:2d&hl=en-US&gl=US&ceid=US:en
 
   - media_name: Myanmar Now
     country: MM
@@ -587,16 +605,6 @@ sources:
       - section: top
         url: https://myanmar-now.org/en/feed/
 
-  - media_name: Frontier Myanmar
-    country: MM
-    language: en
-    tier: 2
-    categories: [MM]
-    feeds:
-      # frontiermyanmar.net/en/feed/ → 403 차단 → Google News 우회
-      - section: top
-        url: https://news.google.com/rss/search?q=site:frontiermyanmar.net+when:7d&hl=en-US&gl=US&ceid=US:en
-
   - media_name: Mizzima
     country: MM
     language: en
@@ -604,7 +612,7 @@ sources:
     categories: [MM]
     feeds:
       - section: top
-        url: https://news.google.com/rss/search?q=site:mizzima.com+when:7d&hl=en-US&gl=US&ceid=US:en
+        url: https://news.google.com/rss/search?q=site:mizzima.com+when:2d&hl=en-US&gl=US&ceid=US:en
 
   - media_name: Eleven Media
     country: MM
@@ -613,7 +621,7 @@ sources:
     categories: [MM]
     feeds:
       - section: top
-        url: https://news.google.com/rss/search?q=site:elevenmyanmar.com+when:7d&hl=en-US&gl=US&ceid=US:en
+        url: https://news.google.com/rss/search?q=site:elevenmyanmar.com+when:2d&hl=en-US&gl=US&ceid=US:en
 
   - media_name: DVB English
     country: MM
@@ -623,6 +631,24 @@ sources:
     feeds:
       - section: top
         url: https://english.dvb.no/feed/
+
+  - media_name: The Diplomat (Myanmar)
+    country: MM
+    language: en
+    tier: 1
+    categories: [MM]
+    feeds:
+      - section: top
+        url: https://news.google.com/rss/search?q=site:thediplomat.com+myanmar&hl=en-US&gl=US&ceid=US:en
+
+  - media_name: Nikkei Asia (Myanmar)
+    country: MM
+    language: en
+    tier: 1
+    categories: [MM]
+    feeds:
+      - section: top
+        url: https://news.google.com/rss/search?q=site:asia.nikkei.com+myanmar&hl=en-US&gl=US&ceid=US:en
 
   # ============================================================
   # 인도 (6): Times of India(중복), Hindustan Times, The Hindu, Economic Times, Mint, Business Standard
