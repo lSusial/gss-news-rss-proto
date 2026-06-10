@@ -107,8 +107,15 @@ def _build_user_message(articles: list[dict]) -> str:
 # ---------------------------------------------------------------------------
 # Claude API 호출
 # ---------------------------------------------------------------------------
+def _extract_json_list(raw: str) -> list:
+    """Claude 응답에서 JSON 배열 추출. 코드 블록·자유 텍스트 모두 처리."""
+    raw = re.sub(r"```(?:json)?\s*", "", raw).strip().rstrip("`").strip()
+    m = re.search(r"\[.*\]", raw, re.DOTALL)
+    return json.loads(m.group(0) if m else raw)
+
+
 def _call_claude(client: anthropic.Anthropic, articles: list[dict]) -> list[dict]:
-    """기사 배치를 Claude에 보내고 [{id, score, summary_ko}] 반환."""
+    """기사 배치를 Claude에 보내고 [{id, score, summary_ko, topics}] 반환."""
     user_msg = _build_user_message(articles)
     try:
         resp = client.messages.create(
@@ -117,13 +124,7 @@ def _call_claude(client: anthropic.Anthropic, articles: list[dict]) -> list[dict
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_msg}],
         )
-        raw = resp.content[0].text.strip()
-        # JSON 블록만 추출
-        if "```" in raw:
-            raw = raw.split("```")[1]
-            if raw.startswith("json"):
-                raw = raw[4:]
-        return json.loads(raw)
+        return _extract_json_list(resp.content[0].text)
     except (json.JSONDecodeError, IndexError, anthropic.APIError) as e:
         log.warning("API 오류: %s — 해당 배치 건너뜀", e)
         return []
@@ -150,48 +151,38 @@ def run_ai_ranking(
     client = anthropic.Anthropic(api_key=api_key)
 
     # 분석 대상 조회
-    where_cc = "AND m.primary_country_code = ?" if country_code else ""
-    params: list[Any] = []
-    if country_code:
-        params.append(country_code)
-    params.append(limit_per_country)
-
-    # 국가별 최신 limit_per_country 건, ai_score 없는 것
     # 중복 기사(duplicate_of IS NOT NULL) 및 LLM 관문 거부 기사 제외
+    _base_where = """
+        a.filter_decision = 'passed'
+        AND a.ai_score IS NULL
+        AND a.duplicate_of IS NULL
+        AND (a.llm_prefilter IS NULL OR a.llm_prefilter = 'passed')
+    """
     if country_code:
         rows = conn.execute(f"""
             SELECT a.article_id, a.title, a.summary, m.primary_country_code AS cc
             FROM articles_raw a
             JOIN media_sources m ON m.source_id = a.source_id
-            WHERE a.filter_decision = 'passed'
-              AND a.ai_score IS NULL
-              AND a.duplicate_of IS NULL
-              AND (a.llm_prefilter IS NULL OR a.llm_prefilter = 'passed')
-              {where_cc}
+            WHERE {_base_where}
+              AND m.primary_country_code = ?
             ORDER BY m.tier ASC, a.published_at DESC NULLS LAST, a.fetched_at DESC
             LIMIT ?
-        """, params).fetchall()
+        """, (country_code, limit_per_country)).fetchall()
     else:
-        # 국가별로 각각 limit개씩 가져와 합산
-        all_rows = []
-        codes = [r["primary_country_code"] for r in conn.execute(
-            "SELECT DISTINCT primary_country_code FROM media_sources ORDER BY primary_country_code"
-        ).fetchall()]
-        for cc in codes:
-            batch = conn.execute("""
-                SELECT a.article_id, a.title, a.summary, m.primary_country_code AS cc
+        # window function으로 국가별 최신 N건을 한 번의 쿼리로 가져옴
+        rows = conn.execute(f"""
+            SELECT article_id, title, summary, cc FROM (
+                SELECT a.article_id, a.title, a.summary,
+                       m.primary_country_code AS cc,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY m.primary_country_code
+                           ORDER BY m.tier ASC, a.published_at DESC NULLS LAST, a.fetched_at DESC
+                       ) AS rn
                 FROM articles_raw a
                 JOIN media_sources m ON m.source_id = a.source_id
-                WHERE a.filter_decision = 'passed'
-                  AND a.ai_score IS NULL
-                  AND a.duplicate_of IS NULL
-                  AND (a.llm_prefilter IS NULL OR a.llm_prefilter = 'passed')
-                  AND m.primary_country_code = ?
-                ORDER BY m.tier ASC, a.published_at DESC NULLS LAST, a.fetched_at DESC
-                LIMIT ?
-            """, (cc, limit_per_country)).fetchall()
-            all_rows.extend(batch)
-        rows = all_rows
+                WHERE {_base_where}
+            ) WHERE rn <= ?
+        """, (limit_per_country,)).fetchall()
 
     # 노이즈 제목 사전 제거 (Tier 0 환율공시·로그인 페이지 등)
     clean_rows = []
@@ -298,7 +289,7 @@ def run_ai_tagging(
     params: list[Any] = []
     if country_code:
         params.append(country_code)
-    params.extend([since])
+    params.append(since)
 
     rows = conn.execute(f"""
         SELECT a.article_id, a.title, a.summary, a.summary_ko
@@ -338,12 +329,7 @@ def run_ai_tagging(
                 system=RETAG_PROMPT,
                 messages=[{"role": "user", "content": user_msg}],
             )
-            raw = resp.content[0].text.strip()
-            if "```" in raw:
-                raw = raw.split("```")[1]
-                if raw.startswith("json"):
-                    raw = raw[4:]
-            results = json.loads(raw)
+            results    = _extract_json_list(resp.content[0].text)
             result_map = {r["id"]: r for r in results}
         except Exception as e:
             log.warning("태깅 API 오류: %s — 배치 건너뜀", e)

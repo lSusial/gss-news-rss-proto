@@ -138,6 +138,13 @@ def _build_prompt(cc: str, articles: list[dict], briefing_type: str, briefing_da
     return "\n\n".join(lines)
 
 
+def _extract_json_object(raw: str) -> dict:
+    """Claude 응답에서 JSON 객체 추출. 코드 블록·자유 텍스트 모두 처리."""
+    raw = re.sub(r"```(?:json)?\s*", "", raw).strip().rstrip("`").strip()
+    m = re.search(r"\{.*\}", raw, re.DOTALL)
+    return json.loads(m.group(0) if m else raw)
+
+
 def _call_claude(
     client: anthropic.Anthropic,
     cc: str,
@@ -153,15 +160,7 @@ def _call_claude(
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": prompt}],
         )
-        raw = resp.content[0].text.strip()
-        if "```" in raw:
-            raw = raw.split("```")[1]
-            if raw.startswith("json"):
-                raw = raw[4:]
-        m = re.search(r"\{.*\}", raw, re.DOTALL)
-        if m:
-            raw = m.group(0)
-        return json.loads(raw)
+        return _extract_json_object(resp.content[0].text)
     except Exception as e:
         log.warning("브리핑 API 오류 (%s): %s", cc, e)
         return None
@@ -188,20 +187,17 @@ def run_briefing(
         # 기본값: 어제 — 새벽 실행 시 전날 기사를 기준으로 브리핑 생성
         briefing_date = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
 
-    # 날짜 필터 구성
+    # 날짜 필터 구성 (파라미터 바인딩으로 SQL injection 방지)
     if briefing_type == "daily":
-        # 해당 날짜 하루치 기사만
-        date_filter = f"AND DATE(COALESCE(a.published_at, a.fetched_at)) = '{briefing_date}'"
+        date_sql    = "AND DATE(COALESCE(a.published_at, a.fetched_at)) = ?"
+        date_params = [briefing_date]
         min_articles = 2
     else:
-        # 주간: briefing_date가 속한 주의 월요일~일요일
-        week_mon = _week_monday(briefing_date)
-        week_sun = _week_sunday(briefing_date)
+        week_mon      = _week_monday(briefing_date)
+        week_sun      = _week_sunday(briefing_date)
         briefing_date = week_mon   # DB 저장 키를 월요일로 통일
-        date_filter = (
-            f"AND DATE(COALESCE(a.published_at, a.fetched_at)) >= '{week_mon}' "
-            f"AND DATE(COALESCE(a.published_at, a.fetched_at)) <= '{week_sun}'"
-        )
+        date_sql    = "AND DATE(COALESCE(a.published_at, a.fetched_at)) BETWEEN ? AND ?"
+        date_params = [week_mon, week_sun]
         min_articles = 3
 
     if country_code:
@@ -216,10 +212,11 @@ def run_briefing(
     if briefing_type == "daily":
         type_label = f"일일/{briefing_date}"
     else:
-        type_label = f"주간/{briefing_date}({_week_sunday(briefing_date)}까지)"
+        type_label = f"주간/{briefing_date}~{_week_sunday(briefing_date)}"
 
     for cc in targets:
-        articles = conn.execute(f"""
+        articles = conn.execute(
+            f"""
             SELECT a.article_id, a.title, a.summary_ko, a.summary,
                    a.ai_score, a.published_at, a.link,
                    m.media_name, m.tier
@@ -228,10 +225,12 @@ def run_briefing(
             WHERE m.primary_country_code = ?
               AND a.filter_decision = 'passed'
               AND a.ai_score >= 3
-              {date_filter}
+              {date_sql}
             ORDER BY a.ai_score DESC, a.published_at DESC NULLS LAST
             LIMIT ?
-        """, (cc, MAX_ARTS)).fetchall()
+            """,
+            (cc, *date_params, MAX_ARTS),
+        ).fetchall()
 
         if len(articles) < min_articles:
             log.info("  %s [%s] %s: 기사 부족 (%d건) — 건너뜀",

@@ -184,25 +184,23 @@ def run_llm_prefilter(
 
     cur = conn.cursor()
     for batch_start in range(0, len(rows), BATCH_SIZE):
-        batch = [dict(r) for r in rows[batch_start: batch_start + BATCH_SIZE]]
-        rejected_items = _call_claude(client, batch)   # [{"id":N, "reason":"..."}]
-        rejected_map = {item["id"]: item["reason"] for item in rejected_items}
+        batch        = [dict(r) for r in rows[batch_start: batch_start + BATCH_SIZE]]
+        rejected_items = _call_claude(client, batch)
+        rejected_map   = {item["id"]: item["reason"] for item in rejected_items}
 
         for i, art in enumerate(batch, 1):
             if i in rejected_map:
-                decision = "rejected"
-                reason = rejected_map[i]
                 cur.execute(
-                    "UPDATE articles_raw SET llm_prefilter = ?, llm_reject_reason = ? WHERE article_id = ?",
-                    (decision, reason, art["article_id"]),
+                    "UPDATE articles_raw SET llm_prefilter = 'rejected', llm_reject_reason = ? WHERE article_id = ?",
+                    (rejected_map[i], art["article_id"]),
                 )
+                stats["rejected"] += 1
             else:
-                decision = "passed"
                 cur.execute(
-                    "UPDATE articles_raw SET llm_prefilter = ? WHERE article_id = ?",
-                    (decision, art["article_id"]),
+                    "UPDATE articles_raw SET llm_prefilter = 'passed' WHERE article_id = ?",
+                    (art["article_id"],),
                 )
-            stats[decision] += 1
+                stats["passed"] += 1
 
         conn.commit()
 

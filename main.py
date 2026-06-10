@@ -54,6 +54,9 @@ def _open() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA synchronous = NORMAL")   # WAL 모드에서 안전하게 쓰기 속도 개선
+    conn.execute("PRAGMA cache_size = -8000")     # 8MB 페이지 캐시
     return conn
 
 

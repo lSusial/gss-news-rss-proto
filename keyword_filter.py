@@ -29,6 +29,7 @@ import html as _html
 import logging
 import re
 import sqlite3
+from collections import defaultdict
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
 
@@ -598,7 +599,6 @@ def run_dedup(conn: sqlite3.Connection, recheck: bool = False) -> dict:
     """).fetchall()
 
     # (cc, date) 별로 그룹화
-    from collections import defaultdict
     groups: dict[tuple, list[dict]] = defaultdict(list)
     for r in rows:
         key = (r["cc"] or "GLOBAL", r["art_date"] or "unknown")
