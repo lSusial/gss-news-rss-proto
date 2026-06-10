@@ -46,7 +46,6 @@ st.markdown("""
 section.main > div { background:#000 !important; }
 .block-container { max-width:1040px; padding:0 1.4rem 3rem; margin:auto; }
 
-
 /* metric */
 [data-testid="metric-container"] {
   background:#111 !important; border-radius:12px !important;
@@ -60,19 +59,43 @@ section.main > div { background:#000 !important; }
 hr { border-color:#1c1c1e !important; }
 summary p { color:#636366 !important; font-size:0.80em !important; }
 
-/* 카드 hover */
-.news-card { transition: opacity 0.15s ease; }
-.news-card:hover { opacity: 0.85; }
-
-
 /* 카드 행 세로 간격 압축 */
 [data-testid="stHorizontalBlock"] [data-testid="stVerticalBlockBorderWrapper"] {
-  padding-bottom:0 !important;
-  margin-bottom:0 !important;
+  padding-bottom:0 !important; margin-bottom:0 !important;
 }
 [data-testid="stVerticalBlock"] > [data-testid="stVerticalBlockBorderWrapper"] {
   padding-bottom:2px !important;
 }
+
+/* 컬럼 간격 */
+div[data-testid="stHorizontalBlock"] {
+  gap:6px !important; margin-bottom:0 !important;
+}
+div[data-testid="stHorizontalBlock"] > div { padding:0 !important; }
+
+/* date_input 중앙 정렬 */
+div[data-testid="stDateInput"] { text-align:center !important; }
+div[data-testid="stDateInput"] input { text-align:center !important; }
+div[data-testid="stDateInput"] > div { justify-content:center !important; }
+
+/* 모바일: 컬럼 가로 유지 + 자동 확대 방지 + 가로 스크롤 방지 */
+@media (max-width: 640px) {
+  [data-testid="stHorizontalBlock"] {
+    flex-direction:row !important; flex-wrap:nowrap !important;
+  }
+  [data-testid="stHorizontalBlock"] > div {
+    min-width:0 !important; flex:1 !important;
+  }
+  html, body, .stApp,
+  [data-testid="stAppViewContainer"],
+  [data-testid="stMain"] {
+    overflow-x:hidden !important; width:100% !important; max-width:100vw !important;
+  }
+  .block-container {
+    padding-left:0.8rem !important; padding-right:0.8rem !important;
+  }
+}
+input, select, textarea, [data-baseweb="select"] * { font-size:16px !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -109,11 +132,10 @@ def load_available_dates(code: str, brief_type: str) -> list[str]:
 @st.cache_data(ttl=60)
 def load_feed(code: str, sel_date: str | None = None, limit: int = 40) -> list[dict]:
     where_cc   = "AND m.primary_country_code = ?" if code != "GLOBAL" else ""
-    if sel_date:
-        where_date = f"AND DATE(COALESCE(a.published_at, a.fetched_at)) = '{sel_date}'"
-    else:
-        where_date = ""
-    params = [code, limit] if code != "GLOBAL" else [limit]
+    where_date = "AND DATE(COALESCE(a.published_at, a.fetched_at)) = ?" if sel_date else ""
+    cc_param   = [code]     if code != "GLOBAL" else []
+    date_param = [sel_date] if sel_date         else []
+    params     = [*cc_param, *date_param, limit]
     rows = conn.execute(f"""
         SELECT m.media_name, m.tier, m.primary_country_code AS cc,
                a.title, a.link, a.published_at, a.fetched_at,
@@ -122,6 +144,7 @@ def load_feed(code: str, sel_date: str | None = None, limit: int = 40) -> list[d
         JOIN media_sources m ON m.source_id = a.source_id
         WHERE a.filter_decision = 'passed'
           AND a.ai_score IS NOT NULL
+          AND a.duplicate_of IS NULL
           {where_cc}
           {where_date}
         ORDER BY
@@ -315,50 +338,6 @@ if chosen_code != sel:
     st.cache_data.clear()
     st.rerun()
 
-st.markdown("""
-<style>
-div[data-testid="stHorizontalBlock"] {
-  gap:6px !important; margin-bottom:0 !important;
-}
-div[data-testid="stHorizontalBlock"] > div { padding:0 !important; }
-
-/* 모바일에서 컬럼 가로 유지 */
-@media (max-width: 640px) {
-  [data-testid="stHorizontalBlock"] {
-    flex-direction:row !important;
-    flex-wrap:nowrap !important;
-  }
-  [data-testid="stHorizontalBlock"] > div {
-    min-width:0 !important;
-    flex:1 !important;
-  }
-}
-
-/* date_input 중앙 정렬 */
-div[data-testid="stDateInput"] { text-align:center !important; }
-div[data-testid="stDateInput"] input { text-align:center !important; }
-div[data-testid="stDateInput"] > div { justify-content:center !important; }
-
-/* 모바일 자동 확대 및 레이아웃 깨짐 방지 */
-input, select, textarea, [data-baseweb="select"] * {
-  font-size:16px !important;
-}
-@media (max-width: 640px) {
-  html, body, .stApp,
-  [data-testid="stAppViewContainer"],
-  [data-testid="stMain"] {
-    overflow-x:hidden !important;
-    width:100% !important;
-    max-width:100vw !important;
-  }
-  .block-container {
-    padding-left:0.8rem !important;
-    padding-right:0.8rem !important;
-  }
-}
-</style>
-""", unsafe_allow_html=True)
-
 st.html("<div style='height:10px;border-top:1px solid #1c1c1e;margin-top:8px'></div>")
 
 # ── 동향 브리핑 카드 ──────────────────────────────────────────────────────────
@@ -432,11 +411,10 @@ if brief and brief.get("summary"):
 
     # 관련 기사 링크 (score 내림차순, 최대 10개)
     src_sorted = sorted(src_arts, key=lambda x: x.get("score", 0), reverse=True)[:10]
-    SCORE_DOT = {5: "#ff453a", 4: "#ff9f0a", 3: "#ffd60a"}
     links_html = "".join(
         f"<div style='display:flex;align-items:baseline;gap:8px;padding:6px 0;"
         f"border-bottom:1px solid #111'>"
-        f"<span style='color:{SCORE_DOT.get(a.get('score',0), '#48484a')};"
+        f"<span style='color:{SCORE_COLOR.get(a.get('score',0), '#48484a')};"
         f"font-size:0.7em;flex-shrink:0'>●</span>"
         f"<div>"
         f"<a href='{_e(a.get('link','#'))}' target='_blank' "
@@ -546,9 +524,7 @@ else:
 
         # 토픽 태그 (최대 3개)
         try:
-            import json as _json
-            raw_topics = art.get("topics") or "[]"
-            topics = _json.loads(raw_topics)[:3]
+            topics = _json.loads(art.get("topics") or "[]")[:3]
         except Exception:
             topics = []
         tags_html = "".join(
@@ -591,7 +567,7 @@ else:
     st.html(f"<div>{rows_html}</div>")
 
 # ── 하단 ──────────────────────────────────────────────────────────────────────
-st.html("<div style='height:8px'>")
+st.html("<div style='height:8px'></div>")
 st.divider()
 
 c1, _ = st.columns([1, 5])
