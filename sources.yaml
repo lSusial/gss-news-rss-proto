@@ -584,7 +584,7 @@ sources:
         url: https://news.google.com/rss/search?q=site:asia.nikkei.com+cambodia&hl=en-US&gl=US&ceid=US:en
 
   # ============================================================
-  # 미얀마 (7) — Tier 2
+  # 미얀마 (9) — Tier 2
   # ============================================================
   - media_name: The Irrawaddy
     country: MM
@@ -594,7 +594,7 @@ sources:
     feeds:
       # irrawaddy.com/feed → 403 차단 → Google News 우회
       - section: top
-        url: https://news.google.com/rss/search?q=site:irrawaddy.com+when:2d&hl=en-US&gl=US&ceid=US:en
+        url: https://news.google.com/rss/search?q=site:irrawaddy.com+when:7d&hl=en-US&gl=US&ceid=US:en
 
   - media_name: Myanmar Now
     country: MM
@@ -612,7 +612,7 @@ sources:
     categories: [MM]
     feeds:
       - section: top
-        url: https://news.google.com/rss/search?q=site:mizzima.com+when:2d&hl=en-US&gl=US&ceid=US:en
+        url: https://news.google.com/rss/search?q=site:mizzima.com+when:7d&hl=en-US&gl=US&ceid=US:en
 
   - media_name: Eleven Media
     country: MM
@@ -621,7 +621,7 @@ sources:
     categories: [MM]
     feeds:
       - section: top
-        url: https://news.google.com/rss/search?q=site:elevenmyanmar.com+when:2d&hl=en-US&gl=US&ceid=US:en
+        url: https://news.google.com/rss/search?q=site:elevenmyanmar.com+when:7d&hl=en-US&gl=US&ceid=US:en
 
   - media_name: DVB English
     country: MM
@@ -649,6 +649,24 @@ sources:
     feeds:
       - section: top
         url: https://news.google.com/rss/search?q=site:asia.nikkei.com+myanmar&hl=en-US&gl=US&ceid=US:en
+
+  - media_name: RFA Myanmar
+    country: MM
+    language: en
+    tier: 1
+    categories: [MM]
+    feeds:
+      - section: top
+        url: https://news.google.com/rss/search?q=site:rfa.org+myanmar+economy&hl=en-US&gl=US&ceid=US:en
+
+  - media_name: BBC Myanmar
+    country: MM
+    language: en
+    tier: 1
+    categories: [MM]
+    feeds:
+      - section: top
+        url: https://news.google.com/rss/search?q=site:bbc.com+myanmar+economy&hl=en-US&gl=US&ceid=US:en
 
   # ============================================================
   # 인도 (6): Times of India(중복), Hindustan Times, The Hindu, Economic Times, Mint, Business Standard
@@ -866,8 +884,6 @@ sources:
     tier: 1
     categories: [GLOBAL_ECONOMY]
     feeds:
-      # 국제결제은행 — 중앙은행·통화정책 분석 핵심 자료
-      - section: speeches
-        url: https://www.bis.org/rss/bis_speeches.xml
-      - section: press
-        url: https://www.bis.org/rss/bis_press.xml
+      # 국제결제은행 — 직접 RSS 404 → Google News 우회
+      - section: news
+        url: https://news.google.com/rss/search?q=site:bis.org+(speech+OR+press+OR+report+OR+statement)+when:7d&hl=en-US&gl=US&ceid=US:en

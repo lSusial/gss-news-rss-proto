@@ -230,6 +230,7 @@ def fetch_feed(feed_id: int, source_id: int, url: str) -> tuple[FetchResult, lis
     if not parsed.entries and bozo_exc:
         return FetchResult(feed_id, url, status, error=f"bozo: {bozo_exc!r}"[:200]), []
 
+    fetched_now = datetime.now(timezone.utc).isoformat()
     rows = []
     for entry in parsed.entries:
         title = (entry.get("title") or "").strip()
@@ -237,7 +238,7 @@ def fetch_feed(feed_id: int, source_id: int, url: str) -> tuple[FetchResult, lis
         if not title or not link:
             continue
         summary = (entry.get("summary") or entry.get("description") or "").strip()
-        published = _parse_published(entry)
+        published = _parse_published(entry) or fetched_now
         rows.append((
             feed_id,
             source_id,
