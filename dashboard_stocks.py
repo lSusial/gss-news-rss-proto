@@ -218,13 +218,7 @@ if "brief_type" not in st.session_state: st.session_state.brief_type = "daily"
 if "sel_date"   not in st.session_state: st.session_state.sel_date   = yesterday_str
 
 # ── 헤더 ──────────────────────────────────────────────────────────────────────
-h1, h2, h3 = st.columns([1, 2, 2])
-with h1:
-    st.html("""
-    <div style="padding:10px 0 4px;display:flex;align-items:center">
-      <span style="font-size:1.7em;line-height:1">🌐</span>
-    </div>
-    """)
+h2, h3 = st.columns(2)
 with h2:
     st.page_link("dashboard_stocks.py", label="📰 뉴스", use_container_width=True)
 with h3:

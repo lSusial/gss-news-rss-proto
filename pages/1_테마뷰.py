@@ -211,13 +211,7 @@ def render_articles(articles: list[dict], theme_color: str) -> str:
 
 
 # ── 헤더 ──────────────────────────────────────────────────────────────────────
-h1, h2, h3 = st.columns([1, 2, 2])
-with h1:
-    st.html("""
-    <div style='padding:10px 0 4px;display:flex;align-items:center'>
-      <span style='font-size:1.7em;line-height:1'>🌐</span>
-    </div>
-    """)
+h2, h3 = st.columns(2)
 with h2:
     st.page_link("dashboard_stocks.py", label="📰 뉴스", use_container_width=True)
 with h3:
