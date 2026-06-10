@@ -214,8 +214,8 @@ _today = datetime.now(timezone.utc).date()
 _last_monday = (_today - timedelta(days=_today.weekday()) - timedelta(days=7)).isoformat()
 
 if "sel"        not in st.session_state: st.session_state.sel        = "US"
-if "brief_type" not in st.session_state: st.session_state.brief_type = "weekly"
-if "sel_date"   not in st.session_state: st.session_state.sel_date   = _last_monday
+if "brief_type" not in st.session_state: st.session_state.brief_type = "daily"
+if "sel_date"   not in st.session_state: st.session_state.sel_date   = yesterday_str
 
 # ── 헤더 ──────────────────────────────────────────────────────────────────────
 h1, h2, h3 = st.columns([1, 2, 2])
@@ -264,7 +264,7 @@ with t1:
         st.rerun()
 
 with t2:
-    if st.button("일일", key="btn_daily", use_container_width=True,
+    if st.button("뉴스 피드", key="btn_daily", use_container_width=True,
                  type="primary" if daily_active else "secondary"):
         st.session_state.brief_type = "daily"
         st.session_state.sel_date   = yesterday_str
