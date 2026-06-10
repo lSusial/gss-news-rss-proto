@@ -187,6 +187,10 @@ def render_articles(articles: list[dict], theme_color: str) -> str:
             for t in topics
         )
 
+        sumko_html = (
+            f"<div style='font-size:0.78em;color:#8e8e93;line-height:1.5;margin-bottom:5px'>{sumko}</div>"
+            if sumko else ""
+        )
         rows += (
             f"<a href='{href}' target='_blank' style='text-decoration:none;display:block'>"
             f"<div style='display:flex;gap:10px;padding:11px 0;border-bottom:1px solid #1c1c1e'>"
@@ -199,7 +203,7 @@ def render_articles(articles: list[dict], theme_color: str) -> str:
             f"<span style='font-size:0.63em;color:#48484a'>{pub}</span>"
             f"</div>"
             f"<div style='font-size:0.88em;font-weight:500;color:#fff;line-height:1.45;margin-bottom:4px'>{title}</div>"
-            f"{'<div style=\"font-size:0.78em;color:#8e8e93;line-height:1.5;margin-bottom:5px\">' + sumko + '</div>' if sumko else ''}"
+            f"{sumko_html}"
             f"{'<div>' + tags_html + '</div>' if tags_html else ''}"
             f"</div></div></a>"
         )
