@@ -55,6 +55,10 @@ section.main > div { background:#000 !important; }
 [data-testid="stMetricValue"] { color:#fff !important; font-size:1.25em !important; font-weight:700 !important; }
 [data-testid="stMetricDelta"] { display:none !important; }
 
+/* 네비 버튼 중앙 정렬 */
+[data-testid="stPageLink"] a { justify-content:center !important; }
+[data-testid="stPageLink"] p { text-align:center !important; width:100% !important; }
+
 [data-testid="stSidebarNav"],[data-testid="stSidebar"],
 header[data-testid="stHeader"],
 [data-testid="collapsedControl"],
@@ -222,7 +226,7 @@ h2, h3 = st.columns(2)
 with h2:
     st.page_link("dashboard_stocks.py", label="📰 뉴스", use_container_width=True)
 with h3:
-    st.page_link("pages/1_테마뷰.py", label="🎯 테마뷰", use_container_width=True)
+    st.page_link("pages/1_테마뷰.py", label="🎯 테마", use_container_width=True)
 
 # ── Row 1: 뷰 타입 + 날짜 네비게이션 (최상단) ────────────────────────────────
 sel_date   = st.session_state.sel_date

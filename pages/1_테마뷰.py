@@ -37,6 +37,11 @@ header[data-testid="stHeader"],
 [data-testid="collapsedControl"],
 [data-testid="stMainMenu"],
 footer { display:none !important; }
+
+/* 네비 버튼 중앙 정렬 */
+[data-testid="stPageLink"] a { justify-content:center !important; }
+[data-testid="stPageLink"] p { text-align:center !important; width:100% !important; }
+
 hr { border-color:#1c1c1e !important; }
 div[data-testid="stHorizontalBlock"] { gap:6px !important; margin-bottom:0 !important; }
 div[data-testid="stHorizontalBlock"] > div { padding:0 !important; }
@@ -215,7 +220,7 @@ h2, h3 = st.columns(2)
 with h2:
     st.page_link("dashboard_stocks.py", label="📰 뉴스", use_container_width=True)
 with h3:
-    st.page_link("pages/1_테마뷰.py", label="🎯 테마뷰", use_container_width=True)
+    st.page_link("pages/1_테마뷰.py", label="🎯 테마", use_container_width=True)
 
 # ── 필터 컨트롤 ───────────────────────────────────────────────────────────────
 fc1, fc2, fc3 = st.columns([2, 1, 1])
