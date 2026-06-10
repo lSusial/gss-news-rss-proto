@@ -115,6 +115,13 @@ header { padding:18px 24px 0; border-bottom:1px solid var(--border); }
 .logo span { color:var(--accent); }
 .header-meta { font-size:11px; color:var(--sub); margin:4px 0 12px; }
 .back { font-size:11px; color:var(--accent); }
+.live-btn {
+  display:inline-flex; align-items:center; gap:5px;
+  background:#1c1c1e; color:#fff; font-size:12px; font-weight:600;
+  padding:6px 14px; border-radius:99px; text-decoration:none;
+  white-space:nowrap; border:1px solid #3a3a3c;
+}
+.live-dot { display:inline-block; width:6px; height:6px; border-radius:50%; background:#30d158; }
 
 /* tabs */
 .tabs { display:flex; gap:6px; overflow-x:auto; scrollbar-width:none; padding-bottom:0; }
@@ -342,7 +349,10 @@ def build_page(
 <header>
   <div style="display:flex;justify-content:space-between;align-items:center">
     <div class="logo">GLB <span>News</span></div>
-    <a class="back" href="index.html">← 목록</a>
+    <div style="display:flex;align-items:center;gap:10px">
+      <a class="live-btn" href="http://168.107.62.99:8502" target="_blank"><span class="live-dot"></span>라이브</a>
+      <a class="back" href="index.html">← 목록</a>
+    </div>
   </div>
   <div class="header-meta">{_e(badge)} · {_e(date_lbl)} · 생성: {now_str}</div>
   <div class="tabs" id="tabs"></div>
@@ -428,7 +438,10 @@ def build_index(entries: list[tuple[str, str, str]]) -> str:
 </head>
 <body>
 <header>
-  <div class="logo">GLB <span>News</span></div>
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <div class="logo">GLB <span>News</span></div>
+    <a class="live-btn" href="http://168.107.62.99:8502" target="_blank"><span class="live-dot"></span>라이브</a>
+  </div>
   <div class="header-meta">브리핑 아카이브 · {now_str}</div>
 </header>
 <main>
