@@ -80,7 +80,7 @@ def _e(t): return _html.escape(str(t or ""))
 # ── 테마 정의 ─────────────────────────────────────────────────────────────────
 THEMES = {
     "esg": {
-        "label": "🌱 ESG / 환경",
+        "label": "🌱 ESG",
         "color": "#30d158",
         "bg":    "#0d1a0d",
         "border":"#1a3a1a",
@@ -258,7 +258,6 @@ for col, theme_key in zip([col_esg, col_reg, col_risk], ["esg", "regulation", "r
             f"<div style='background:{th['bg']};border:1px solid {th['border']};"
             f"border-radius:12px;padding:12px 16px;margin-bottom:12px'>"
             f"<span style='font-size:0.95em;font-weight:700;color:{th['color']}'>{th['label']}</span>"
-            f"<span style='font-size:0.72em;color:#48484a;margin-left:8px'>{len(articles)}건</span>"
             f"</div>"
         )
         st.html(render_articles(articles, th["color"]))
