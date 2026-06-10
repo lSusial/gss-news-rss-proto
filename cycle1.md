@@ -1,7 +1,7 @@
 # GLB News RSS — 현황 보고서
 
 > 프로토타입 구성 및 개선 작업 통합 정리
-> 최초 작성: 2026-05-29 / 최종 업데이트: 2026-06-09
+> 최초 작성: 2026-05-29 / 최종 업데이트: 2026-06-10
 > 대상 경로: `/prototype/`
 
 ---
@@ -125,7 +125,12 @@ python main.py export articles.json
 
 **Tier 0 공식기관**: Fed, BOJ, RBI, BI, SBV, NBC, PBOC, 한국은행, 기재부, 금융위, MOEF
 
-**전체**: 78개 매체, 99개 피드
+**전체**: 84개 매체, 104개 피드 (2026-06-10 기준)
+
+**KH 신규 추가**: The Diplomat (Cambodia), Nikkei Asia (Cambodia)
+**MM 신규 추가**: The Diplomat (Myanmar), Nikkei Asia (Myanmar), RFA Myanmar, BBC Myanmar
+**MM 제거**: Frontier Myanmar (지속 1건 수집으로 제거)
+**BIS**: 직접 RSS(404) → Google News 우회로 교체
 
 ---
 
@@ -204,6 +209,12 @@ python main.py export articles.json
 - 입력 포커스 시 자동 확대 방지 (`font-size: 16px`)
 - 수집 건수·필터 통과율 등 관리 정보를 **접힌 expander로 숨김** (일반 사용자 노출 제거)
 
+### 대시보드 정리 (2026-06-10)
+- `dashboard.py` 삭제 — `dashboard_stocks.py` (포트 8502)가 단일 메인 화면
+- `load_feed`에 `duplicate_of IS NULL` 필터 추가 (중복 기사 제거)
+- CSS 두 블록 → 최상단 단일 블록 통합
+- 날짜 필터 KST 보정: `DATE(datetime(published_at, '+9 hours'))`
+
 ### 기사 색상 점
 
 | 색상 | 의미 |
@@ -247,17 +258,17 @@ data/html/
 
 ---
 
-## 11. 현재 DB 데이터 현황 (2026-06-08 기준)
+## 11. 현재 DB 데이터 현황 (2026-06-10 기준)
 
 | 항목 | 수치 |
 |---|---|
-| 전체 수집 기사 | 21,239건 |
-| 키워드 필터 통과 | 5,007건 (23.6%) |
-| LLM 관문 처리 | 4,616건 → 통과 3,411건 |
-| AI 분석 완료 | ~2,500건 |
-| 토픽 태그 생성 | 최근 7일 기사 (~1,424건, 진행 중) |
-| 브리핑 | 일일 8개국×8일 + 주간 10개국 |
-| 활성 피드 | 99개 |
+| 전체 수집 기사 | ~35,000건+ |
+| 키워드 필터 통과율 | ~10-24% (매체·국가별 편차) |
+| LLM 관문 통과율 | ~83% (Haiku, 20건 배치) |
+| AI 분석 완료 | 누적 ~3,000건+ |
+| 브리핑 | 일일 8/10개국 + 주간 8/10개국 (2026-06-09 기준) |
+| 활성 피드 | 104개 |
+| 활성 매체 | 84개 |
 
 ---
 
@@ -272,7 +283,22 @@ data/html/
 
 ---
 
-## 13. 다음 과제
+## 13. 코드 개선 이력 (2026-06-10)
+
+### 전체 코드 검토 및 리팩토링
+- **schema.sql**: 파이프라인 전 컬럼 명시 + 인덱스 7개 추가 (`filter_decision`, `llm_prefilter`, `ai_score`, `duplicate_of` 등)
+- **briefing.py**: f-string SQL → 파라미터 바인딩, JSON 파싱 regex 교체
+- **llm_ranker.py**: 국가별 N+1 쿼리 → window function 단일 쿼리, `import re` 누락 수정
+- **llm_prefilter.py**: API 오류 시 `return []`(전부 passed) → `return None`(skip, NULL 유지 후 재처리)
+- **keyword_filter.py**: `DEDUP_THRESHOLD` 0.60 → 0.75 ("rate hike" vs "rate hold" 오합산 방지)
+- **main.py**: `_open()`에 WAL/NORMAL/cache_size PRAGMA 추가
+- **collector.py**: `pubDate` 없는 피드 `published_at NULL` → 수집 시각(UTC) 대체
+- **타임존 통일**: `DATE(published_at)` UTC → `DATE(datetime(..., '+9 hours'))` KST 보정 (briefing, dedup, dashboard 3곳)
+- `requirements.txt`에 `anthropic`, `streamlit` 추가
+
+---
+
+## 14. 다음 과제
 
 ### 자동화
 - ~~macOS launchd 또는 AWS EventBridge로 매일 새벽 파이프라인 자동 실행~~ → **완료** (Oracle Cloud 서버 cron 등록, 한국 시간 06:00, `run_pipeline.sh` git 관리)
@@ -280,6 +306,7 @@ data/html/
 ### 기능
 - 토픽 태그 기반 대시보드 필터링 (태그 클릭 → 관련 기사)
 - 날짜별 HTML 자동 Netlify 배포
+- 웹 스크래핑 (RSS 없는 매체 대응)
 
 ### 프로덕션 이관
 - SQLite → PostgreSQL + pgvector
@@ -288,4 +315,4 @@ data/html/
 
 ---
 
-*최종 업데이트: 2026-06-09*
+*최종 업데이트: 2026-06-10*
