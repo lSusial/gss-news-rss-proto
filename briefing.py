@@ -55,10 +55,15 @@ SYSTEM_PROMPT = """\
     }
   ],
   "outlook": "향후 3-6개월 전망 및 한국 금융기관에 대한 구체적 시사점을 4-5문장으로 서술. 리스크 요인, 기회 요인, 모니터링 포인트를 포함할 것.",
-  "keywords": ["핵심키워드1", ...]
+  "keywords": ["핵심키워드1", ...],
+  "key_stat": {
+    "value": "이번 기간 가장 임팩트 있는 수치 1개 (예: +$23/배럴, -3.5%, 5.4조원)",
+    "label": "해당 수치의 맥락 설명 (15자 이내, 예: WTI 유가 상승폭)"
+  }
 }
 
 issues는 반드시 3-5개 포함. 각 detail은 최소 3문장 이상.
+key_stat은 기사에서 가장 주목할 단일 수치·변화량. 없으면 null.
 """
 
 
@@ -117,6 +122,18 @@ def ensure_briefings_schema(conn: sqlite3.Connection) -> None:
     conn.execute("ALTER TABLE country_briefings_v2 RENAME TO country_briefings")
     conn.commit()
     log.info("마이그레이션 완료")
+
+    # key_stat 컬럼도 추가
+    _ensure_key_stat_column(conn)
+
+
+def _ensure_key_stat_column(conn: sqlite3.Connection) -> None:
+    """key_stat 컬럼이 없으면 추가 (멱등)."""
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(country_briefings)")}
+    if "key_stat" not in cols:
+        conn.execute("ALTER TABLE country_briefings ADD COLUMN key_stat TEXT")
+        conn.commit()
+        log.info("key_stat 컬럼 추가 완료")
 
 
 # ---------------------------------------------------------------------------
@@ -257,17 +274,19 @@ def run_briefing(
             for a in arts_list
         ]
 
+        _ensure_key_stat_column(conn)
         conn.execute("""
             INSERT INTO country_briefings
               (cc, briefing_date, briefing_type, generated_at,
-               summary, issues, outlook, keywords, model, article_count, source_articles)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               summary, issues, outlook, keywords, key_stat, model, article_count, source_articles)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(cc, briefing_date, briefing_type) DO UPDATE SET
                 generated_at    = excluded.generated_at,
                 summary         = excluded.summary,
                 issues          = excluded.issues,
                 outlook         = excluded.outlook,
                 keywords        = excluded.keywords,
+                key_stat        = excluded.key_stat,
                 model           = excluded.model,
                 article_count   = excluded.article_count,
                 source_articles = excluded.source_articles
@@ -280,6 +299,7 @@ def run_briefing(
             json.dumps(result.get("issues",   []), ensure_ascii=False),
             result.get("outlook", ""),
             json.dumps(result.get("keywords", []), ensure_ascii=False),
+            json.dumps(result.get("key_stat"), ensure_ascii=False) if result.get("key_stat") else None,
             MODEL,
             len(arts_list),
             json.dumps(source_articles, ensure_ascii=False),

@@ -136,7 +136,7 @@ def _call_claude(client: anthropic.Anthropic, articles: list[dict]) -> list[dict
 def run_ai_ranking(
     conn: sqlite3.Connection,
     country_code: str | None = None,
-    limit_per_country: int = 50,
+    limit_per_country: int = 200,
 ) -> dict:
     """
     passed 기사 중 ai_score가 없는 것을 Claude로 분석.
@@ -158,6 +158,11 @@ def run_ai_ranking(
         AND a.ai_score IS NULL
         AND a.duplicate_of IS NULL
         AND (a.llm_prefilter IS NULL OR a.llm_prefilter = 'passed')
+        AND NOT (
+            a.filter_reason = 'official_source'
+            AND (a.title IS NULL OR LENGTH(TRIM(a.title)) < 12)
+            AND (a.summary IS NULL OR LENGTH(TRIM(a.summary)) < 20)
+        )
     """
     if country_code:
         rows = conn.execute(f"""

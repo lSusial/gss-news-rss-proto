@@ -132,6 +132,26 @@ FINANCE_KEYWORDS: list[str] = [
     "climate change", "net zero", "renewable energy", "green energy",
     "sustainability", "sustainable finance", "green bond", "social bond",
     "governance", "corporate governance", "disclosure", "csr",
+    # 노동시장·고용 (경제 지표)
+    "job market", "labor market", "labour market", "employment rate",
+    "unemployment rate", "jobless", "nonfarm payroll", "payroll",
+    "wage growth", "minimum wage", "workforce", "labor force",
+    # 금융 소송·규제집행
+    "lawsuit", "litigation", "legal action", "settlement",
+    "financial penalty", "fine", "class action",
+    "sec investigation", "doj", "department of justice",
+    "financial fraud", "securities fraud", "ponzi",
+    # 무역·공급망 보완
+    "trade war", "trade tensions", "trade friction",
+    "reshoring", "nearshoring", "onshoring",
+    "chip ban", "export control", "technology transfer",
+    # 부동산·자산시장
+    "real estate market", "property market", "housing market",
+    "home prices", "mortgage rate", "commercial real estate",
+    # 소비·경기
+    "consumer spending", "consumer confidence", "retail sales",
+    "purchasing managers", "pmi", "manufacturing index",
+    "economic indicator", "economic data", "economic outlook",
 ]
 
 # ---------------------------------------------------------------------------

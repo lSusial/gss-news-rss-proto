@@ -216,6 +216,91 @@ def cmd_brief(args):
     print(f"[brief/{type_label}] 국가={stats['total']}  완료={stats['done']}  건너뜀={stats['skipped']}")
 
 
+def cmd_run_all(args):
+    """
+    전체 파이프라인을 순서대로 실행:
+      fetch → filter → dedup → llm-filter → ai-rank → brief
+
+    기본 동작: 일일 브리핑 (어제 기사 기준).
+    --type weekly 로 주간 브리핑 가능.
+    """
+    import os
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        print("❌ 환경변수 ANTHROPIC_API_KEY를 설정하세요.", file=sys.stderr)
+        sys.exit(1)
+
+    brief_type = getattr(args, "type", "daily")
+    brief_date = getattr(args, "date", None)
+    skip_fetch = getattr(args, "skip_fetch", False)
+    rank_limit = getattr(args, "limit", 200)
+
+    print("=" * 60)
+    print(f"[run-all] 파이프라인 시작 (brief_type={brief_type})")
+    print("=" * 60)
+
+    # ① fetch
+    if not skip_fetch:
+        print("\n▶ [1/6] 피드 수집...")
+        conn = collector.init_db(DB_PATH, SCHEMA) if not DB_PATH.exists() else _open()
+        collector.sync_sources(conn, SOURCES)
+        run_id = collector.run_fetch_all(conn)
+        run = conn.execute("SELECT * FROM fetch_runs WHERE run_id = ?", (run_id,)).fetchone()
+        print(f"   feeds={run['feeds_total']} (ok={run['feeds_ok']} fail={run['feeds_failed']})  "
+              f"new={run['new_articles']} dup={run['dup_articles']}")
+    else:
+        print("\n▶ [1/6] 피드 수집 — 건너뜀 (--skip-fetch)")
+
+    conn = _open()
+
+    # ② keyword filter
+    print("\n▶ [2/6] 키워드 필터...")
+    stats = keyword_filter.run_keyword_filter(conn)
+    if stats["total"] > 0:
+        print(f"   처리={stats['total']:,}  통과={stats['passed']:,}  거부={stats['rejected']:,}")
+    else:
+        print("   처리할 기사 없음")
+
+    # ③ dedup
+    print("\n▶ [3/6] 중복 제거...")
+    keyword_filter.ensure_dedup_column(conn)
+    stats = keyword_filter.run_dedup(conn)
+    if stats["checked"] > 0:
+        print(f"   검사={stats['checked']:,}  중복={stats['duplicates']:,}")
+    else:
+        print("   처리할 기사 없음")
+
+    # ④ llm-filter
+    print("\n▶ [4/6] LLM 관문 (Haiku)...")
+    llm_prefilter.ensure_prefilter_column(conn)
+    stats = llm_prefilter.run_llm_prefilter(conn, limit=500)
+    if stats["total"] > 0:
+        print(f"   대상={stats['total']:,}  통과={stats['passed']:,}  거부={stats['rejected']:,}")
+    else:
+        print("   처리할 기사 없음")
+
+    # ⑤ ai-rank
+    print(f"\n▶ [5/6] AI 중요도 분석 (국가당 최대 {rank_limit}건)...")
+    stats = llm_ranker.run_ai_ranking(conn, limit_per_country=rank_limit)
+    if stats["total"] > 0:
+        print(f"   대상={stats['total']:,}  완료={stats['analyzed']:,}  실패={stats['skipped']:,}")
+    else:
+        print("   분석할 기사 없음")
+
+    # ⑥ brief
+    print(f"\n▶ [6/6] 브리핑 생성 ({brief_type})...")
+    stats = briefing.run_briefing(
+        conn,
+        briefing_type=brief_type,
+        briefing_date=brief_date,
+    )
+    type_label = "일일" if brief_type == "daily" else "주간"
+    print(f"   [{type_label}] 국가={stats['total']}  완료={stats['done']}  건너뜀={stats['skipped']}")
+
+    print("\n" + "=" * 60)
+    print("[run-all] 완료")
+    print("=" * 60)
+
+
 def cmd_export(args):
     conn = _open()
     rows = conn.execute("""
@@ -251,7 +336,7 @@ def main():
     sub.add_parser("filter-report", help="필터 결과 리포트 생성 → data/filter_report.md")
     air = sub.add_parser("ai-rank",  help="AI 중요도 분석 및 한글 요약 (ANTHROPIC_API_KEY 필요)")
     air.add_argument("--country", type=str, default=None, help="국가 코드 (예: KH, US, CN)")
-    air.add_argument("--limit",   type=int, default=50,   help="국가당 분석 건수 (기본 50)")
+    air.add_argument("--limit",   type=int, default=200,  help="국가당 분석 건수 (기본 200)")
     brf = sub.add_parser("brief", help="국가별 동향 브리핑 생성 (ANTHROPIC_API_KEY 필요)")
     brf.add_argument("--country", type=str, default=None,
                      help="국가 코드 (예: US, IN)")
@@ -282,12 +367,26 @@ def main():
     rtg.add_argument("--days",    type=int, default=7,   help="최근 N일 기사 (기본 7)")
     rtg.add_argument("--country", type=str, default=None, help="국가 코드")
 
+    # ── run-all ────────────────────────────────────────────────
+    rna = sub.add_parser("run-all",
+                         help="전체 파이프라인 실행: fetch→filter→dedup→llm-filter→ai-rank→brief")
+    rna.add_argument("--type",       type=str, default="daily",
+                     choices=["daily", "weekly"],
+                     help="브리핑 타입 (기본: daily)")
+    rna.add_argument("--date",       type=str, default=None,
+                     help="기준 날짜 YYYY-MM-DD (기본: 어제)")
+    rna.add_argument("--limit",      type=int, default=200,
+                     help="AI 분석 국가당 최대 건수 (기본 200)")
+    rna.add_argument("--skip-fetch", action="store_true", dest="skip_fetch",
+                     help="피드 수집 건너뜀 (이미 수집한 경우)")
+
     args = p.parse_args()
     {"init": cmd_init, "fetch": cmd_fetch, "report": cmd_report,
      "filter": cmd_filter, "filter-report": cmd_filter_report,
      "dedup": cmd_dedup, "llm-filter": cmd_llm_filter,
      "ai-rank": cmd_ai_rank, "retag": cmd_retag, "brief": cmd_brief,
-     "list": cmd_list, "export": cmd_export}[args.cmd](args)
+     "list": cmd_list, "export": cmd_export,
+     "run-all": cmd_run_all}[args.cmd](args)
 
 
 if __name__ == "__main__":

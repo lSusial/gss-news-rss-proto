@@ -1,109 +1,123 @@
-"""
-GLB News RSS — Apple Stocks 스타일 대시보드 v3
-실행: streamlit run dashboard_stocks.py
-"""
+"""GLB News RSS — 대시보드"""
 import html as _html
 import json as _json
+import score_engine
 import sqlite3
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import streamlit as st
 
 DB_PATH = Path(__file__).parent / "data" / "news.db"
 
 COUNTRIES = [
-    ("🌐", "GLOBAL", "All"),
-    ("🇺🇸", "US",    "USA"),
-    ("🇨🇳", "CN",    "CHN"),
-    ("🇯🇵", "JP",    "JPN"),
-    ("🇮🇳", "IN",    "IND"),
-    ("🇮🇩", "ID",    "IDN"),
-    ("🇻🇳", "VN",    "VNM"),
-    ("🇰🇭", "KH",    "KHM"),
-    ("🇲🇲", "MM",    "MMR"),
+    ("🌐", "GLOBAL", "글로벌"),
+    ("🇺🇸", "US",    "미국"),
+    ("🇨🇳", "CN",    "중국"),
+    ("🇯🇵", "JP",    "일본"),
+    ("🇮🇳", "IN",    "인도"),
+    ("🇮🇩", "ID",    "인도네시아"),
+    ("🇻🇳", "VN",    "베트남"),
+    ("🇰🇭", "KH",    "캄보디아"),
+    ("🇲🇲", "MM",    "미얀마"),
 ]
 CC_FLAG = {c[1]: c[0] for c in COUNTRIES}
 CC_NAME = {c[1]: c[2] for c in COUNTRIES}
 
-SCORE_COLOR = {5: "#ff453a", 4: "#ff9f0a", 3: "#ffd60a"}
+# 타임바 — GLOBAL은 UTC
+TIMEBAR = [
+    ("🌐", "UTC",    "UTC"),
+    ("🇺🇸", "뉴욕",  "America/New_York"),
+    ("🇨🇳", "베이징","Asia/Shanghai"),
+    ("🇯🇵", "도쿄",  "Asia/Tokyo"),
+    ("🇮🇳", "뭄바이","Asia/Kolkata"),
+    ("🇮🇩", "자카르타","Asia/Jakarta"),
+    ("🇻🇳", "하노이","Asia/Ho_Chi_Minh"),
+    ("🇰🇭", "프놈펜","Asia/Phnom_Penh"),
+    ("🇲🇲", "양곤",  "Asia/Rangoon"),
+]
+
+LEVEL_COLOR = {
+    "높음": "#9E2A22", "경보": "#9E2A22",
+    "보통": "#1E4D8C", "주의": "#D4590A",
+    "낮음": "#1F6142",
+}
+GAUGE_META = {
+    "Economy": ("경제",   "#1E4D8C"),
+    "Finance": ("금융",   "#1F6142"),
+    "Digital": ("디지털", "#4E328A"),
+    "Risk":    ("리스크", "#9E2A22"),
+}
+SCORE_COLOR = {5: "#9E2A22", 4: "#D4590A", 3: "#A8841A"}
 SCORE_LABEL = {5: "핵심", 4: "중요", 3: "관련"}
 
+NAVY  = "#54504A"
+GOLD  = "#FFBC00"
+INK   = "#1A1816"
+PAPER = "#F7F5F0"
+CARD  = "#FFFFFF"
+LINE  = "#E4E0D8"
+SUB   = "#8A857C"
+
 st.set_page_config(
-    page_title="GLB News",
-    page_icon="📈",
+    page_title="GLB 대시보드",
+    page_icon="🏠",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
 
-# ── CSS ───────────────────────────────────────────────────────────────────────
-st.markdown("""
+st.markdown(f"""
 <style>
-.stApp,[data-testid="stAppViewContainer"],
-[data-testid="stHeader"],[data-testid="stToolbar"] {
-  background:#000 !important;
-}
-section.main > div { background:#000 !important; }
-.block-container { max-width:1040px; padding:0 1.4rem 3rem; margin:auto; }
+@import url('https://cdn.jsdelivr.net/npm/pretendard@1.3.9/dist/web/static/pretendard.css');
+* {{ font-family:"Pretendard","Noto Sans KR",-apple-system,sans-serif !important; }}
 
-/* metric */
-[data-testid="metric-container"] {
-  background:#111 !important; border-radius:12px !important;
-  padding:12px 16px !important;
-}
-[data-testid="stMetricLabel"] { color:#636366 !important; font-size:0.70em !important; }
-[data-testid="stMetricValue"] { color:#fff !important; font-size:1.25em !important; font-weight:700 !important; }
-[data-testid="stMetricDelta"] { display:none !important; }
-
-/* 네비 버튼 중앙 정렬 */
-[data-testid="stPageLink"] a { justify-content:center !important; }
-[data-testid="stPageLink"] p { text-align:center !important; width:100% !important; }
+.stApp,[data-testid="stAppViewContainer"] {{ background:{PAPER} !important; }}
+section.main > div {{ background:transparent !important; }}
+.block-container {{ max-width:500px !important; padding:0 0 60px !important; margin:auto !important; }}
 
 [data-testid="stSidebarNav"],[data-testid="stSidebar"],
-header[data-testid="stHeader"],
-[data-testid="collapsedControl"],
-[data-testid="stMainMenu"],
-footer { display:none !important; }
-hr { border-color:#1c1c1e !important; }
-summary p { color:#636366 !important; font-size:0.80em !important; }
+header[data-testid="stHeader"],[data-testid="collapsedControl"],
+[data-testid="stMainMenu"],footer {{ display:none !important; }}
 
-/* 카드 행 세로 간격 압축 */
-[data-testid="stHorizontalBlock"] [data-testid="stVerticalBlockBorderWrapper"] {
-  padding-bottom:0 !important; margin-bottom:0 !important;
-}
-[data-testid="stVerticalBlock"] > [data-testid="stVerticalBlockBorderWrapper"] {
-  padding-bottom:2px !important;
-}
+[data-testid="stHorizontalBlock"] {{ gap:6px !important; margin:0 !important; }}
+[data-testid="stHorizontalBlock"] > div {{ padding:0 !important; }}
 
-/* 컬럼 간격 */
-div[data-testid="stHorizontalBlock"] {
-  gap:6px !important; margin-bottom:0 !important;
-}
-div[data-testid="stHorizontalBlock"] > div { padding:0 !important; }
+.stButton button {{
+  background:{CARD} !important; color:{INK} !important;
+  border:1.5px solid {LINE} !important; border-radius:8px !important;
+  font-weight:700 !important; font-size:12px !important;
+}}
+.stButton button[kind="primary"] {{
+  background:{NAVY} !important; color:{GOLD} !important; border-color:{NAVY} !important;
+}}
 
-/* date_input 중앙 정렬 */
-div[data-testid="stDateInput"] { text-align:center !important; }
-div[data-testid="stDateInput"] input { text-align:center !important; }
-div[data-testid="stDateInput"] > div { justify-content:center !important; }
+[data-baseweb="select"] > div {{ background:{CARD} !important; border-color:{LINE} !important; }}
+[data-baseweb="select"] * {{ color:{INK} !important; }}
 
-/* 모바일: 컬럼 가로 유지 + 자동 확대 방지 + 가로 스크롤 방지 */
-@media (max-width: 640px) {
-  [data-testid="stHorizontalBlock"] {
-    flex-direction:row !important; flex-wrap:nowrap !important;
-  }
-  [data-testid="stHorizontalBlock"] > div {
-    min-width:0 !important; flex:1 !important;
-  }
-  html, body, .stApp,
-  [data-testid="stAppViewContainer"],
-  [data-testid="stMain"] {
-    overflow-x:hidden !important; width:100% !important; max-width:100vw !important;
-  }
-  .block-container {
-    padding-left:0.8rem !important; padding-right:0.8rem !important;
-  }
-}
-input, select, textarea, [data-baseweb="select"] * { font-size:16px !important; }
+[data-testid="metric-container"] {{
+  background:{CARD} !important; border-radius:10px !important;
+  padding:10px 14px !important; border:1px solid {LINE} !important;
+}}
+[data-testid="stMetricLabel"] {{ color:{SUB} !important; font-size:0.68em !important; }}
+[data-testid="stMetricValue"] {{ color:{INK} !important; font-size:1.1em !important; font-weight:800 !important; }}
+[data-testid="stMetricDelta"] {{ display:none !important; }}
+
+[data-testid="stPageLink"] a {{
+  justify-content:center !important; color:{INK} !important;
+  background:{CARD} !important; border:1px solid {LINE} !important; border-radius:8px !important;
+}}
+[data-testid="stPageLink"] p {{
+  text-align:center !important; width:100% !important;
+  color:{INK} !important; font-size:12px !important; font-weight:700 !important;
+}}
+[data-testid="stExpander"] {{ border-color:{LINE} !important; background:{CARD} !important; }}
+summary p {{ color:{SUB} !important; font-size:0.80em !important; }}
+
+@media (max-width:640px) {{
+  .block-container {{ padding-left:0 !important; padding-right:0 !important; }}
+}}
+input,select,textarea,[data-baseweb="select"] * {{ font-size:16px !important; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -112,95 +126,83 @@ input, select, textarea, [data-baseweb="select"] * { font-size:16px !important; 
 def get_conn():
     c = sqlite3.connect(DB_PATH, check_same_thread=False)
     c.row_factory = sqlite3.Row
+    c.execute("PRAGMA journal_mode=WAL")
+    c.execute("PRAGMA synchronous=NORMAL")
+    c.execute("PRAGMA cache_size=-8000")
     return c
 
 conn = get_conn()
 def _e(t): return _html.escape(str(t or ""))
+def _md(h): st.markdown(h, unsafe_allow_html=True)
 
 # ── 쿼리 ──────────────────────────────────────────────────────────────────────
+@st.cache_data(ttl=300)
+def load_temperature(cc, target_date):
+    try:
+        if cc == "GLOBAL":
+            return score_engine.compute_global_temperature(conn, target_date=target_date)
+        return score_engine.compute_country_temperature(conn, cc, target_date=target_date)
+    except Exception:
+        return {}
+
 @st.cache_data(ttl=120)
-def load_briefing(code: str, brief_date: str, brief_type: str) -> dict | None:
-    r = conn.execute(
-        "SELECT * FROM country_briefings WHERE cc=? AND briefing_date=? AND briefing_type=?",
-        (code, brief_date, brief_type),
-    ).fetchone()
+def load_briefing_latest(cc):
+    r = conn.execute("""
+        SELECT * FROM country_briefings
+        WHERE cc=? AND briefing_type='daily'
+        ORDER BY briefing_date DESC LIMIT 1
+    """, (cc,)).fetchone()
     return dict(r) if r else None
 
 @st.cache_data(ttl=120)
-def load_available_dates(code: str, brief_type: str) -> list[str]:
-    """해당 국가·타입의 브리핑이 있는 날짜 목록 (최신순)."""
-    rows = conn.execute("""
-        SELECT DISTINCT briefing_date FROM country_briefings
-        WHERE cc = ? AND briefing_type = ?
-        ORDER BY briefing_date DESC
-        LIMIT 30
-    """, (code, brief_type)).fetchall()
-    return [r["briefing_date"] for r in rows]
-
-@st.cache_data(ttl=60)
-def load_feed(code: str, sel_date: str | None = None, limit: int = 40) -> list[dict]:
-    where_cc   = "AND m.primary_country_code = ?" if code != "GLOBAL" else ""
-    where_date = "AND DATE(datetime(COALESCE(a.published_at, a.fetched_at), '+9 hours')) = ?" if sel_date else ""
-    cc_param   = [code]     if code != "GLOBAL" else []
-    date_param = [sel_date] if sel_date         else []
-    params     = [*cc_param, *date_param, limit]
+def load_top_articles(sel_date, cc="GLOBAL", limit=3):
+    where_cc = "AND m.primary_country_code = ?" if cc != "GLOBAL" else ""
+    cc_param = [cc] if cc != "GLOBAL" else []
     rows = conn.execute(f"""
-        SELECT m.media_name, m.tier, m.primary_country_code AS cc,
-               a.title, a.link, a.published_at, a.fetched_at,
-               a.ai_score, a.summary_ko, a.filter_reason, a.topics
+        SELECT a.title, a.link, a.summary_ko, a.ai_score,
+               a.published_at, m.media_name, m.primary_country_code AS cc
         FROM articles_raw a
         JOIN media_sources m ON m.source_id = a.source_id
-        WHERE a.filter_decision = 'passed'
-          AND a.ai_score IS NOT NULL
+        WHERE a.filter_decision='passed' AND a.ai_score >= 4
           AND a.duplicate_of IS NULL
+          AND DATE(datetime(COALESCE(a.published_at, a.fetched_at), '+9 hours')) = ?
           {where_cc}
-          {where_date}
-        ORDER BY
-          CASE WHEN m.tier = 0 THEN 0 ELSE 1 END ASC,
-          a.ai_score DESC,
-          a.published_at DESC NULLS LAST
+        ORDER BY a.ai_score DESC, a.published_at DESC NULLS LAST
         LIMIT ?
-    """, params).fetchall()
+    """, (sel_date, *cc_param, limit)).fetchall()
     return [dict(r) for r in rows]
 
 @st.cache_data(ttl=60)
-def load_admin_stats(code: str) -> dict:
+def load_admin_stats(code):
     where = "AND m.primary_country_code = ?" if code != "GLOBAL" else ""
     params = [code] if code != "GLOBAL" else []
     r = conn.execute(f"""
         SELECT
-          COUNT(*) FILTER (WHERE a.filter_decision='passed')        AS passed,
-          COUNT(*) FILTER (WHERE a.filter_decision='rejected')      AS rejected,
-          COUNT(*) FILTER (WHERE a.ai_score IS NOT NULL)            AS ai_done,
-          COUNT(*) FILTER (WHERE a.ai_score IS NULL
-                           AND a.filter_decision='passed')          AS ai_pending,
-          COUNT(*) FILTER (WHERE a.ai_score = 5)                    AS s5,
-          COUNT(*) FILTER (WHERE a.ai_score = 4)                    AS s4,
-          COUNT(*) FILTER (WHERE a.ai_score = 3)                    AS s3,
-          COUNT(*) FILTER (WHERE a.filter_reason='official_source') AS official
+          COUNT(*) FILTER (WHERE a.filter_decision='passed')              AS passed,
+          COUNT(*) FILTER (WHERE a.ai_score IS NOT NULL)                  AS ai_done,
+          COUNT(*) FILTER (WHERE a.ai_score=5)                            AS s5,
+          COUNT(*) FILTER (WHERE a.ai_score IS NULL AND a.filter_decision='passed') AS ai_pending
         FROM articles_raw a
         JOIN media_sources m ON m.source_id = a.source_id
         WHERE 1=1 {where}
     """, params).fetchone()
     return dict(r) if r else {}
 
-@st.cache_data(ttl=60)
-def load_source_stats(code: str) -> list[dict]:
-    where = "AND m.primary_country_code = ?" if code != "GLOBAL" else ""
-    params = [code] if code != "GLOBAL" else []
-    rows = conn.execute(f"""
-        SELECT m.media_name, m.tier, m.primary_country_code AS cc,
-               COUNT(*) AS total,
-               COUNT(*) FILTER (WHERE a.filter_decision='passed') AS passed
-        FROM articles_raw a
-        JOIN media_sources m ON m.source_id = a.source_id
-        WHERE 1=1 {where}
-        GROUP BY m.media_name, m.tier, m.primary_country_code
-        ORDER BY m.tier ASC, passed DESC
-    """, params).fetchall()
-    return [dict(r) for r in rows]
+def _latest_date():
+    yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+    try:
+        row = conn.execute("""
+            SELECT DATE(datetime(COALESCE(published_at, fetched_at), '+9 hours')) AS d
+            FROM articles_raw WHERE filter_decision='passed'
+              AND ai_score IS NOT NULL AND duplicate_of IS NULL
+              AND DATE(datetime(COALESCE(published_at, fetched_at), '+9 hours')) <= ?
+            ORDER BY d DESC LIMIT 1
+        """, (yesterday,)).fetchone()
+        return row["d"] if row else yesterday
+    except Exception:
+        return yesterday
 
-def fmt_time(iso: str | None) -> str:
+def fmt_time(iso):
     if not iso: return ""
     try:
         dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
@@ -211,418 +213,254 @@ def fmt_time(iso: str | None) -> str:
     except Exception:
         return (iso or "")[:10]
 
+# ── 렌더러 ────────────────────────────────────────────────────────────────────
+def render_masthead(kst_str):
+    _md(f"""
+<div style='background:{NAVY};padding:12px 20px 10px;position:relative;overflow:hidden'>
+  <div style='position:absolute;right:-8px;top:-8px;font-size:72px;font-weight:900;
+    color:rgba(255,255,255,.04);line-height:1;pointer-events:none;letter-spacing:-.04em'>GLB</div>
+  <div style='display:flex;align-items:center;justify-content:space-between'>
+    <span style='color:{GOLD};font-size:13px;font-weight:900;letter-spacing:.08em'>GLB NEWS</span>
+    <span style='color:#8A9BB4;font-size:11px;font-weight:600'>{kst_str}</span>
+  </div>
+  <h1 style='color:#fff;font-size:20px;font-weight:900;letter-spacing:-.02em;
+    line-height:1.2;margin:6px 0 2px'>글로벌 대시보드</h1>
+  <div style='color:#7A8FA8;font-size:10.5px;font-weight:600'>9개 대상국 · AI 뉴스 모니터링</div>
+</div>
+""")
+
+def render_pulse(scores):
+    if not scores: return
+    rows = ""
+    for cat, (label, color) in GAUGE_META.items():
+        s = scores.get(cat)
+        if not s: continue
+        lv_color = LEVEL_COLOR.get(s.level, SUB)
+        rows += (
+            f"<div style='display:flex;align-items:center;gap:10px'>"
+            f"<span style='font-size:11px;font-weight:700;color:{INK};width:46px;flex-shrink:0'>{label}</span>"
+            f"<div style='flex:1;background:{PAPER};border-radius:10px;height:7px;overflow:hidden'>"
+            f"<div style='height:100%;width:{int(s.score)}%;background:{color};border-radius:10px'></div></div>"
+            f"<span style='font-size:10.5px;font-weight:800;color:{lv_color};"
+            f"width:28px;text-align:right;flex-shrink:0'>{s.level}</span>"
+            f"</div>"
+        )
+    _md(f"""
+<div style='background:{CARD};padding:14px 20px;border-bottom:1px solid {LINE}'>
+  <div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:10px'>
+    <span style='font-size:11px;font-weight:900;letter-spacing:.06em;color:{INK}'>GLOBAL PULSE</span>
+    <span style='font-size:10px;font-weight:700;color:{SUB};background:{PAPER};
+      border-radius:3px;padding:2px 7px'>최근 3일 평균</span>
+  </div>
+  <div style='display:flex;flex-direction:column;gap:7px'>{rows}</div>
+</div>
+""")
+
+def render_key_stat(brief):
+    if not brief: return
+    try:
+        ks = _json.loads(brief.get("key_stat") or "null")
+    except Exception:
+        ks = None
+    if not ks or not isinstance(ks, dict) or not ks.get("value"): return
+    val   = _e(str(ks.get("value", "")))
+    label = _e(str(ks.get("label", "")))
+    bdate = _e(brief.get("briefing_date",""))
+    _md(f"""
+<div style='margin:14px 20px 0;background:{CARD};border-radius:10px;padding:16px;
+  border:1px solid {LINE};position:relative;overflow:hidden;
+  box-shadow:0 2px 8px rgba(26,24,22,.06)'>
+  <div style='position:absolute;left:0;top:0;bottom:0;width:4px;background:{GOLD}'></div>
+  <div style='padding-left:8px'>
+    <div style='font-size:10px;font-weight:900;letter-spacing:.1em;color:{SUB};margin-bottom:8px'>이 날의 숫자 · {bdate}</div>
+    <div style='font-size:36px;font-weight:900;color:{NAVY};letter-spacing:-.03em;line-height:1;margin-bottom:6px'>{val}</div>
+    <div style='font-size:12.5px;font-weight:700;color:{INK}'>{label}</div>
+  </div>
+</div>
+""")
+
+def render_top3(articles):
+    if not articles: return
+    a0     = articles[0]
+    title0 = _e(a0.get("title") or "")
+    sumko0 = _e((a0.get("summary_ko") or "")[:100])
+    href0  = _e(a0.get("link") or "#")
+    flag0  = CC_FLAG.get(a0.get("cc",""), "")
+    cname0 = CC_NAME.get(a0.get("cc",""), a0.get("cc",""))
+    media0 = _e((a0.get("media_name") or "").upper())
+    sc0    = a0.get("ai_score") or 0
+    sc_c0  = SCORE_COLOR.get(sc0, SUB)
+    sc_l0  = SCORE_LABEL.get(sc0, "")
+
+    lead_html = (
+        f"<p style='font-size:12.5px;color:{SUB};line-height:1.5;margin:0'>{sumko0}</p>"
+    ) if sumko0 else ""
+    sc_badge = (
+        f"<span style='font-size:11px;font-weight:700;border-radius:3px;padding:2px 8px;"
+        f"background:{sc_c0}22;color:{sc_c0}'>{sc_l0}</span>"
+    ) if sc_l0 else ""
+
+    first_html = (
+        f"<a href='{href0}' target='_blank' style='text-decoration:none;color:inherit;display:block'>"
+        f"<div style='background:{CARD};border:1px solid {LINE};border-left:4px solid {NAVY};"
+        f"border-radius:8px;padding:15px 15px 13px;margin-bottom:8px;position:relative;overflow:hidden'>"
+        f"<div style='position:absolute;bottom:-10px;right:8px;font-size:80px;font-weight:900;"
+        f"color:rgba(0,0,0,.04);line-height:1;pointer-events:none'>1</div>"
+        f"<div style='display:flex;align-items:center;gap:7px;margin-bottom:9px;flex-wrap:wrap'>"
+        f"<span style='font-size:12px'>{flag0}</span>"
+        f"<span style='font-size:11px;font-weight:700;color:{SUB}'>{cname0} · {media0}</span>"
+        f"{sc_badge}</div>"
+        f"<div style='font-size:16px;font-weight:900;line-height:1.3;color:{INK};"
+        f"margin-bottom:7px;letter-spacing:-.02em'>{title0}</div>"
+        f"{lead_html}</div></a>"
+    )
+
+    side_html = ""
+    if len(articles) > 1:
+        cards = ""
+        for i, a in enumerate(articles[1:3], 2):
+            t_n    = _e(a.get("title") or "")
+            h_n    = _e(a.get("link") or "#")
+            fl_n   = CC_FLAG.get(a.get("cc",""), "")
+            cn_n   = CC_NAME.get(a.get("cc",""), a.get("cc",""))
+            sumko_n = _e((a.get("summary_ko") or "")[:55])
+            extra  = f"border-right:1px solid {LINE};" if i == 2 else ""
+            sumko_html = (
+                f"<div style='font-size:11px;color:{SUB};line-height:1.5;margin-top:5px'>{sumko_n}…</div>"
+            ) if sumko_n else ""
+            cards += (
+                f"<a href='{h_n}' target='_blank' style='text-decoration:none;color:inherit;"
+                f"flex:1;min-width:0;display:block'>"
+                f"<div style='padding:13px;position:relative;overflow:hidden;{extra}'>"
+                f"<div style='position:absolute;bottom:-4px;right:6px;font-size:44px;font-weight:900;"
+                f"color:rgba(0,0,0,.04);line-height:1;pointer-events:none'>{i}</div>"
+                f"<div style='display:inline-block;font-size:10px;font-weight:900;background:{NAVY};"
+                f"color:{GOLD};border-radius:3px;padding:2px 6px;margin-bottom:7px'>0{i}</div>"
+                f"<div style='display:flex;align-items:center;gap:5px;margin-bottom:6px'>"
+                f"<span style='font-size:11px'>{fl_n}</span>"
+                f"<span style='font-size:11px;font-weight:700;color:{SUB}'>{cn_n}</span></div>"
+                f"<div style='font-size:13px;font-weight:800;line-height:1.4;color:{INK}'>{t_n}</div>"
+                f"{sumko_html}"
+                f"</div></a>"
+            )
+        side_html = (
+            f"<div style='display:flex;background:{CARD};border:1px solid {LINE};"
+            f"border-radius:8px;overflow:hidden'>{cards}</div>"
+        )
+
+    _md(f"""
+<div style='margin:14px 20px 0'>
+  <div style='display:flex;align-items:center;gap:10px;margin-bottom:10px'>
+    <div style='flex:1;height:1.5px;background:{INK}'></div>
+    <span style='font-size:11px;font-weight:900;letter-spacing:.1em;color:{INK};white-space:nowrap'>TODAY'S TOP</span>
+    <div style='flex:1;height:1.5px;background:{INK}'></div>
+  </div>
+  {first_html}{side_html}
+</div>
+""")
+
+def render_timebar():
+    now_utc = datetime.now(timezone.utc)
+    chips = ""
+    for flag, name, tz in TIMEBAR:
+        try:
+            local = now_utc.astimezone(ZoneInfo(tz))
+            t = local.strftime("%H:%M")
+        except Exception:
+            t = "--:--"
+        chips += (
+            f"<div style='flex-shrink:0;background:{CARD};border:1px solid {LINE};"
+            f"border-radius:8px;padding:9px 12px;min-width:64px;text-align:center'>"
+            f"<span style='font-size:16px;display:block;margin-bottom:4px'>{flag}</span>"
+            f"<span style='font-size:10px;font-weight:700;color:{SUB};display:block;margin-bottom:3px'>{name}</span>"
+            f"<span style='font-size:13px;font-weight:900;color:{INK};display:block'>{t}</span>"
+            f"</div>"
+        )
+    _md(f"""
+<div style='margin:14px 0 0;padding:0 0 0 20px'>
+  <div style='font-size:10px;font-weight:900;letter-spacing:.08em;color:{SUB};margin-bottom:8px'>거점 현지시각</div>
+  <div style='display:flex;gap:8px;overflow-x:auto;padding-right:20px;padding-bottom:14px;scrollbar-width:none'>
+    {chips}
+  </div>
+</div>
+""")
+
 # ── 세션 ──────────────────────────────────────────────────────────────────────
-today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-yesterday_str = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
-_today = datetime.now(timezone.utc).date()
-_last_monday = (_today - timedelta(days=_today.weekday()) - timedelta(days=7)).isoformat()
-
-if "sel"        not in st.session_state: st.session_state.sel        = "US"
-if "brief_type" not in st.session_state: st.session_state.brief_type = "daily"
-if "sel_date"   not in st.session_state: st.session_state.sel_date   = yesterday_str
-
-# ── 헤더 ──────────────────────────────────────────────────────────────────────
-h2, h3 = st.columns(2)
-with h2:
-    st.page_link("dashboard_stocks.py", label="📰 뉴스", use_container_width=True)
-with h3:
-    st.page_link("pages/1_테마뷰.py", label="🎯 테마", use_container_width=True)
-
-# ── Row 1: 뷰 타입 + 날짜 네비게이션 (최상단) ────────────────────────────────
-sel_date   = st.session_state.sel_date
-brief_type = st.session_state.brief_type
-
-is_realtime   = (brief_type == "realtime")
-daily_active  = (brief_type == "daily")
-weekly_active = (brief_type == "weekly")
-
-# 1주 모드: sel_date를 해당 주 월요일로 스냅
-if weekly_active:
-    d = date.fromisoformat(sel_date)
-    monday = d - timedelta(days=d.weekday())
-    if monday.isoformat() != sel_date:
-        st.session_state.sel_date = monday.isoformat()
-        sel_date = monday.isoformat()
-
-# date_picker 위젯 상태를 sel_date 기준으로 단방향 동기화
-# (value= 파라미터 충돌 방지: session_state만 사용)
-if daily_active:
-    _sd = date.fromisoformat(sel_date)
-    if st.session_state.get("date_picker") != _sd:
-        st.session_state["date_picker"] = _sd
-
-# Row 1: 모드 버튼
-t1, t2, t3 = st.columns(3)
-
-with t1:
-    if st.button("주간 브리핑", key="btn_weekly", use_container_width=True,
-                 type="primary" if weekly_active else "secondary"):
-        st.session_state.brief_type = "weekly"
-        st.cache_data.clear()
-        st.rerun()
-
-with t2:
-    if st.button("뉴스 피드", key="btn_daily", use_container_width=True,
-                 type="primary" if daily_active else "secondary"):
-        st.session_state.brief_type = "daily"
-        st.session_state.sel_date   = yesterday_str
-        st.cache_data.clear()
-        st.rerun()
-
-with t3:
-    if st.button("실시간", key="btn_realtime", use_container_width=True,
-                 type="primary" if is_realtime else "secondary"):
-        st.session_state.brief_type = "realtime"
-        st.cache_data.clear()
-        st.rerun()
-
-# Row 2: 날짜 네비
-nav_step = timedelta(days=7) if weekly_active else timedelta(days=1)
-n1, n2, n3 = st.columns([1, 3, 1])
-
-with n1:
-    if st.button("◀", key="btn_prev",
-                 use_container_width=True, disabled=is_realtime):
-        prev = date.fromisoformat(sel_date) - nav_step
-        st.session_state.sel_date = prev.isoformat()
-        st.cache_data.clear()
-        st.rerun()
-
-with n2:
-    if is_realtime:
-        st.html(
-            "<div style='text-align:center;padding:8px 0;"
-            "color:#30d158;font-size:0.82em;font-weight:600'>📡 실시간</div>"
-        )
-    elif weekly_active:
-        mon = date.fromisoformat(sel_date)
-        sun = mon + timedelta(days=6)
-        week_label = f"{mon.strftime('%-m/%-d')}(월) ~ {sun.strftime('%-m/%-d')}(일)"
-        st.html(
-            f"<div style='text-align:center;padding:8px 0;"
-            f"color:#ebebf5;font-size:0.80em;font-weight:500'>{week_label}</div>"
-        )
-    else:
-        picked = st.date_input(
-            "날짜",
-            label_visibility="collapsed",
-            key="date_picker"
-        )
-        picked_str = picked.isoformat()
-        if picked_str != sel_date:
-            st.session_state.sel_date = picked_str
-            st.cache_data.clear()
-            st.rerun()
-
-with n3:
-    if st.button("▶", key="btn_next",
-                 use_container_width=True, disabled=is_realtime):
-        nxt = date.fromisoformat(sel_date) + nav_step
-        if nxt.isoformat() <= yesterday_str:
-            st.session_state.sel_date = nxt.isoformat()
-            st.cache_data.clear()
-            st.rerun()
-
-st.html("<div style='height:8px;border-top:1px solid #1c1c1e;margin-top:6px'></div>")
-
-# ── Row 2: 국가 선택 ──────────────────────────────────────────────────────────
+if "sel" not in st.session_state: st.session_state.sel = "GLOBAL"
 sel = st.session_state.sel
 
-country_labels = [f"{flag} {name}" for flag, _, name in COUNTRIES]
-country_codes  = [code for _, code, _ in COUNTRIES]
+latest_date = _latest_date()
+
+# ══════════════════════════════════════════════════════
+#  1. MASTHEAD
+# ══════════════════════════════════════════════════════
+try:
+    kst_now = datetime.now(timezone.utc).astimezone(ZoneInfo("Asia/Seoul"))
+    day_ko  = ["월","화","수","목","금","토","일"][kst_now.weekday()]
+    kst_str = kst_now.strftime(f"%Y.%m.%d {day_ko}")
+except Exception:
+    kst_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+render_masthead(kst_str)
+_md("<div style='height:10px'></div>")
+
+# ══════════════════════════════════════════════════════
+#  2. NAV (3 탭)
+# ══════════════════════════════════════════════════════
+n1, n2, n3 = st.columns(3)
+with n1: st.page_link("dashboard_stocks.py", label="🏠 대시보드", use_container_width=True)
+with n2: st.page_link("pages/2_뉴스.py",      label="📰 뉴스",    use_container_width=True)
+with n3: st.page_link("pages/1_테마뷰.py",    label="🎯 테마",    use_container_width=True)
+
+# ══════════════════════════════════════════════════════
+#  3. 국가 선택
+# ══════════════════════════════════════════════════════
+country_labels = [f"{f} {n}" for f, _, n in COUNTRIES]
+country_codes  = [c for _, c, _ in COUNTRIES]
 cur_idx = country_codes.index(sel) if sel in country_codes else 0
-chosen = st.selectbox("국가", country_labels, index=cur_idx, label_visibility="collapsed")
+chosen  = st.selectbox("국가", country_labels, index=cur_idx, label_visibility="collapsed")
 chosen_code = country_codes[country_labels.index(chosen)]
 if chosen_code != sel:
     st.session_state.sel = chosen_code
-    st.cache_data.clear()
-    st.rerun()
+    st.cache_data.clear(); st.rerun()
 
-st.html("<div style='height:10px;border-top:1px solid #1c1c1e;margin-top:8px'></div>")
+# ══════════════════════════════════════════════════════
+#  4. GLOBAL PULSE
+# ══════════════════════════════════════════════════════
+render_pulse(load_temperature(chosen_code, latest_date))
 
-# ── 동향 브리핑 카드 ──────────────────────────────────────────────────────────
-if is_realtime:
-    # 실시간 모드: 브리핑 없이 뉴스만
-    st.html(
-        "<div style='background:#0d1a0d;border:1px solid #1a3a1a;border-radius:12px;"
-        "padding:12px 18px;margin-bottom:12px;display:flex;align-items:center;gap:10px'>"
-        "<span style='color:#30d158;font-size:1em'>📡</span>"
-        "<div>"
-        "<span style='color:#30d158;font-size:0.78em;font-weight:700;"
-        "letter-spacing:1px'>실시간 뉴스</span>"
-        "<span style='color:#48484a;font-size:0.72em;margin-left:10px'>"
-        "오늘 수집 기사 · 브리핑 없음</span>"
-        "</div>"
-        "</div>"
-    )
-    brief = None
-else:
-    type_label  = "일일 브리핑" if brief_type == "daily" else "주간 브리핑"
-    avail_dates = load_available_dates(sel, brief_type)
-    brief = load_briefing(sel, sel_date, brief_type)
-    if not brief:
-        if avail_dates:
-            latest = avail_dates[0]
-            st.html(
-                f"<div style='background:#1c1c1e;border-radius:12px;padding:14px 18px;"
-                f"margin-bottom:12px;color:#8e8e93;font-size:0.85em'>"
-                f"📭 {sel_date} {type_label}가 없습니다. "
-                f"가장 최근 브리핑: <b style='color:#ebebf5'>{latest}</b></div>"
-            )
-        else:
-            st.html(
-                f"<div style='background:#1c1c1e;border-radius:12px;padding:14px 18px;"
-                f"margin-bottom:12px;color:#8e8e93;font-size:0.85em'>"
-                f"📭 {type_label}가 아직 없습니다. "
-                f"<code>python main.py brief --type {brief_type}</code>를 실행하세요.</div>"
-            )
+# ══════════════════════════════════════════════════════
+#  5. KEY STAT
+# ══════════════════════════════════════════════════════
+_brief = load_briefing_latest(chosen_code) or load_briefing_latest("GLOBAL")
+render_key_stat(_brief)
 
-if brief and brief.get("summary"):
-    gen_time = fmt_time(brief.get("generated_at", ""))
-    summary  = _e(brief.get("summary", ""))
-    outlook  = _e(brief.get("outlook", ""))
-    art_cnt  = brief.get("article_count", 0)
+# ══════════════════════════════════════════════════════
+#  6. TODAY'S TOP 3
+# ══════════════════════════════════════════════════════
+render_top3(load_top_articles(latest_date, cc=chosen_code))
 
-    try: issues   = _json.loads(brief.get("issues", "[]"))
-    except Exception: issues = []
-    try: keywords = _json.loads(brief.get("keywords", "[]"))
-    except Exception: keywords = []
-    try: src_arts = _json.loads(brief.get("source_articles", "[]"))
-    except Exception: src_arts = []
+# ══════════════════════════════════════════════════════
+#  7. TIMEBAR
+# ══════════════════════════════════════════════════════
+render_timebar()
+_md(f"<div style='height:1px;background:{LINE};margin:4px 20px 12px'></div>")
 
-    # 주요 이슈 — 제목 + 상세내용 세로 나열
-    issues_html = "".join(
-        f"<div style='margin-bottom:14px;padding-bottom:14px;"
-        f"border-bottom:1px solid #1a3a5c'>"
-        f"<div style='color:#fff;font-size:0.88em;font-weight:600;"
-        f"margin-bottom:5px'>{_e(iss.get('title',''))}</div>"
-        f"<div style='color:#8e8e93;font-size:0.83em;line-height:1.7'>"
-        f"{_e(iss.get('detail',''))}</div>"
-        f"</div>"
-        for iss in issues
-    )
+# ══════════════════════════════════════════════════════
+#  8. 수집 현황
+# ══════════════════════════════════════════════════════
+with st.expander("📊 수집 현황"):
+    stats = load_admin_stats(chosen_code)
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("필터 통과", f"{stats.get('passed',0):,}")
+    c2.metric("AI 완료",   f"{stats.get('ai_done',0):,}")
+    c3.metric("★5 핵심",   f"{stats.get('s5',0):,}")
+    c4.metric("AI 대기",   f"{stats.get('ai_pending',0):,}")
+    if st.button("↻ 새로고침", key="refresh_btn"):
+        st.cache_data.clear(); st.rerun()
 
-    # 키워드
-    kw_html = " ".join(
-        f"<span style='background:#2c2c2e;color:#ebebf5;font-size:0.70em;"
-        f"padding:3px 10px;border-radius:99px'>{_e(k)}</span>"
-        for k in keywords
-    )
-
-    # 관련 기사 링크 (score 내림차순, 최대 10개)
-    src_sorted = sorted(src_arts, key=lambda x: x.get("score", 0), reverse=True)[:10]
-    links_html = "".join(
-        f"<div style='display:flex;align-items:baseline;gap:8px;padding:6px 0;"
-        f"border-bottom:1px solid #111'>"
-        f"<span style='color:{SCORE_COLOR.get(a.get('score',0), '#48484a')};"
-        f"font-size:0.7em;flex-shrink:0'>●</span>"
-        f"<div>"
-        f"<a href='{_e(a.get('link','#'))}' target='_blank' "
-        f"style='color:#ebebf5;font-size:0.83em;font-weight:400;line-height:1.5;"
-        f"text-decoration:none'>{_e(a.get('title',''))}</a>"
-        f"<span style='color:#48484a;font-size:0.72em;margin-left:8px'>"
-        f"{_e(a.get('source',''))}</span>"
-        f"</div>"
-        f"</div>"
-        for a in src_sorted
-    )
-
-    # 섹션 조립
-    issues_sec  = (
-        f"<div style='margin-bottom:16px'>{issues_html}</div>"
-    ) if issues_html else ""
-    outlook_sec = (
-        f"<div style='background:#0d1f38;border-radius:10px;"
-        f"padding:12px 16px;margin-bottom:16px'>"
-        f"<div style='color:#0a84ff;font-size:0.72em;font-weight:700;"
-        f"letter-spacing:0.8px;text-transform:uppercase;margin-bottom:6px'>"
-        f"전망 &amp; 시사점</div>"
-        f"<div style='font-size:0.85em;line-height:1.75;color:#ebebf5'>{outlook}</div>"
-        f"</div>"
-    ) if outlook else ""
-    kw_sec = (
-        f"<div style='display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px'>{kw_html}</div>"
-    ) if kw_html else ""
-    links_sec = (
-        f"<div style='margin-top:4px'>"
-        f"<div style='color:#636366;font-size:0.68em;font-weight:700;"
-        f"letter-spacing:1px;text-transform:uppercase;margin-bottom:8px'>"
-        f"참고 기사</div>"
-        f"{links_html}</div>"
-    ) if links_html else ""
-
-    st.html(
-        f"<div style='background:#0a1628;border:1px solid #1a3a5c;"
-        f"border-radius:16px;padding:22px 24px;margin-bottom:16px'>"
-        # 헤더
-        f"<div style='display:flex;justify-content:space-between;"
-        f"align-items:center;margin-bottom:16px'>"
-        f"<div style='display:flex;align-items:center;gap:10px'>"
-        f"<span style='font-size:0.68em;font-weight:700;color:#0a84ff;"
-        f"letter-spacing:1.2px;text-transform:uppercase'>{_e(type_label)}</span>"
-        f"<span style='font-size:0.62em;color:#48484a'>· {sel_date} · {art_cnt}건 분석</span>"
-        f"</div>"
-        f"<span style='font-size:0.62em;color:#48484a'>{gen_time} 생성</span>"
-        f"</div>"
-        # 종합 요약
-        f"<div style='font-size:0.88em;line-height:1.8;color:#ebebf5;"
-        f"margin-bottom:18px;padding-bottom:16px;border-bottom:1px solid #1a3a5c'>"
-        f"{summary}</div>"
-        # 주요 이슈
-        f"{issues_sec}"
-        # 전망
-        f"{outlook_sec}"
-        # 키워드
-        f"{kw_sec}"
-        # 관련 기사 링크
-        f"{links_sec}"
-        f"</div>"
-    )
-
-# ── 뉴스 리스트 (주간 모드는 브리핑만, 뉴스 목록 불필요) ─────────────────────
-if weekly_active:
-    articles = []
-else:
-    feed_date = today_str if is_realtime else sel_date
-    articles  = load_feed(sel, sel_date=feed_date, limit=40)
-
-if not articles and not weekly_active:
-    st.html("""
-    <div style="text-align:center;padding:80px 0">
-      <div style="font-size:3em;margin-bottom:12px">📭</div>
-      <div style="font-size:1em;font-weight:500;color:#8e8e93">표시할 기사가 없습니다</div>
-      <div style="font-size:0.82em;margin-top:8px;color:#636366">
-        python main.py fetch → filter → ai-rank 순서로 실행하세요
-      </div>
-    </div>
-    """)
-else:
-    show_flag = (sel == "GLOBAL")
-    rows_html = ""
-    for art in articles:
-        score  = art.get("ai_score") or 0
-        is_off = (art.get("tier") == 0)
-        media  = _e((art.get("media_name") or "").upper())
-        title  = _e(art.get("title") or "")
-        href   = _e(art.get("link") or "#")
-        sumko  = _e(art.get("summary_ko") or "")
-        pub    = fmt_time(art.get("published_at") or art.get("fetched_at"))
-        cc     = art.get("cc", "")
-
-        # 앞머리 색상 점: 공식=초록, 점수별
-        if is_off:       dot_color = "#30d158"
-        elif score == 5: dot_color = "#ff453a"
-        elif score == 4: dot_color = "#ff9f0a"
-        elif score == 3: dot_color = "#ffd60a"
-        else:            dot_color = "#3a3a3c"
-
-        cc_tag   = f"<span style='margin-right:5px'>{CC_FLAG.get(cc,'')}</span>" if show_flag else ""
-        sumko_bl = (
-            f"<div style='margin-top:5px;font-size:0.82em;line-height:1.65;color:#8e8e93'>"
-            f"{sumko}</div>"
-        ) if sumko else ""
-
-        # 토픽 태그 (최대 3개)
-        try:
-            topics = _json.loads(art.get("topics") or "[]")[:3]
-        except Exception:
-            topics = []
-        tags_html = "".join(
-            f"<span style='background:#2c2c2e;color:#ebebf5;font-size:0.60em;"
-            f"padding:1px 6px;border-radius:99px;margin-left:5px;"
-            f"white-space:nowrap'>{_e(t)}</span>"
-            for t in topics
-        )
-
-        rows_html += (
-            f"<a href='{href}' target='_blank' style='text-decoration:none;display:block'>"
-            f"<div style='display:flex;gap:12px;padding:13px 0;"
-            f"border-bottom:1px solid #1c1c1e;"
-            f"transition:opacity 0.12s'"
-            f"onmouseover=\"this.style.opacity='0.75'\""
-            f"onmouseout=\"this.style.opacity='1'\">"
-            f"<div style='padding-top:4px;flex-shrink:0'>"
-            f"<span style='display:block;width:7px;height:7px;border-radius:50%;"
-            f"background:{dot_color}'></span>"
-            f"</div>"
-            f"<div style='flex:1;min-width:0'>"
-            f"<div style='display:flex;justify-content:space-between;"
-            f"align-items:center;margin-bottom:3px'>"
-            f"<span style='display:flex;align-items:center;flex-wrap:wrap;gap:0'>"
-            f"<span style='font-size:0.65em;font-weight:600;color:#636366;"
-            f"letter-spacing:0.4px'>{cc_tag}{media}</span>"
-            f"{tags_html}"
-            f"</span>"
-            f"<span style='font-size:0.65em;color:#48484a;margin-left:8px;"
-            f"white-space:nowrap;flex-shrink:0'>{pub}</span>"
-            f"</div>"
-            f"<div style='font-size:0.92em;font-weight:500;color:#fff;line-height:1.5'>"
-            f"{title}</div>"
-            f"{sumko_bl}"
-            f"</div>"
-            f"</div>"
-            f"</a>"
-        )
-
-    st.html(f"<div>{rows_html}</div>")
-
-# ── 하단 ──────────────────────────────────────────────────────────────────────
-st.html("<div style='height:8px'></div>")
-st.divider()
-
-c1, _ = st.columns([1, 5])
-with c1:
-    if st.button("↻  새로고침", use_container_width=True):
-        st.cache_data.clear()
-        st.rerun()
-
-# ── 관리자 통계 ───────────────────────────────────────────────────────────────
-with st.expander("🔧 관리자 통계", expanded=False):
-    st.html("<div style='height:4px'>")
-    stat = load_admin_stats(sel)
-
-    m = st.columns(5)
-    m[0].metric("수집 기사",  stat.get("passed",    0))
-    m[1].metric("필터 제외",  stat.get("rejected",  0))
-    m[2].metric("AI 분석",   stat.get("ai_done",   0))
-    m[3].metric("분석 대기",  stat.get("ai_pending",0))
-    m[4].metric("공식 발표",  stat.get("official",  0))
-
-    st.html("<div style='height:10px'>")
-    st.markdown("**점수 분포**")
-    total_ai = max(stat.get("ai_done", 0) or 0, 1)
-    d = st.columns(3)
-    for col, (sc, lbl) in zip(d, [(5,"핵심"),(4,"중요"),(3,"관련")]):
-        cnt = stat.get(f"s{sc}", 0) or 0
-        col.metric(f"score {sc} {lbl}", cnt, delta=f"{cnt/total_ai*100:.0f}%")
-
-    st.html("<div style='height:10px'>")
-    st.markdown("**매체별 현황**")
-    sources = load_source_stats(sel)
-    if sources:
-        rows_html = "".join(
-            f"<tr>"
-            f"<td style='padding:5px 10px;color:#8e8e93;font-size:0.78em'>"
-            f"{'🟢 ' if s['tier']==0 else ''}{CC_FLAG.get(s.get('cc',''),'')} {_e(s['media_name'])}"
-            f"</td>"
-            f"<td style='padding:5px 10px;text-align:right;color:#636366;font-size:0.78em'>T{s['tier']}</td>"
-            f"<td style='padding:5px 10px;text-align:right;color:#fff;font-size:0.78em'>"
-            f"{s.get('passed',0)}/{s.get('total',0)}</td>"
-            f"<td style='padding:5px 10px;width:120px'>"
-            f"<div style='background:#111;border-radius:3px;height:4px'>"
-            f"<div style='width:{(s.get('passed',0) or 0)/(s.get('total',1) or 1)*100:.0f}%;"
-            f"height:100%;background:#48484a;border-radius:3px'></div></div></td>"
-            f"</tr>"
-            for s in sources
-        )
-        st.html(f"""
-        <table style="width:100%;border-collapse:collapse">
-          <thead><tr style="border-bottom:1px solid #2c2c2e">
-            <th style="padding:5px 10px;text-align:left;color:#636366;font-size:0.72em">매체</th>
-            <th style="padding:5px 10px;text-align:right;color:#636366;font-size:0.72em">Tier</th>
-            <th style="padding:5px 10px;text-align:right;color:#636366;font-size:0.72em">통과/전체</th>
-            <th style="padding:5px 10px;color:#636366;font-size:0.72em">비율</th>
-          </tr></thead>
-          <tbody>{rows_html}</tbody>
-        </table>
-        """)
+_md(
+    f"<div style='text-align:center;padding:20px;border-top:1px solid {LINE};margin-top:8px'>"
+    f"<span style='font-size:10px;font-weight:800;letter-spacing:.2em;color:{NAVY};opacity:.3'>"
+    f"GLB NEWS RSS PROTOTYPE</span></div>"
+)
