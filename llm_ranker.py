@@ -31,9 +31,10 @@ from keyword_filter import _clean_text
 
 log = logging.getLogger("llm_ranker")
 
-MODEL        = "claude-haiku-4-5-20251001"
-BATCH_SIZE   = 10   # API 1회 호출당 기사 수
-RATE_DELAY   = 0.5  # 호출 간 대기(초) — rate limit 방지
+MODEL           = "claude-haiku-4-5-20251001"
+BATCH_SIZE      = 10   # API 1회 호출당 기사 수
+RATE_DELAY      = 0.5  # 호출 간 대기(초) — rate limit 방지
+LIMIT_PER_MEDIA = 50   # 매체당 최대 처리 건수 (단일 매체 독점 방지)
 
 # Tier 0 공식소스에서도 걸러낼 무의미 제목 패턴
 _NOISE_TITLES = {
@@ -115,8 +116,9 @@ def _extract_json_list(raw: str) -> list:
     return json.loads(m.group(0) if m else raw)
 
 
-def _call_claude(client: anthropic.Anthropic, articles: list[dict]) -> list[dict]:
-    """기사 배치를 Claude에 보내고 [{id, score, summary_ko, topics}] 반환."""
+def _call_claude(client: anthropic.Anthropic, articles: list[dict], _depth: int = 0) -> list[dict]:
+    """기사 배치를 Claude에 보내고 [{id, score, summary_ko, topics}] 반환.
+    JSON 파싱 실패 시 배치를 절반으로 나눠 최대 2회 재시도."""
     user_msg = _build_user_message(articles)
     try:
         resp = client.messages.create(
@@ -126,7 +128,21 @@ def _call_claude(client: anthropic.Anthropic, articles: list[dict]) -> list[dict
             messages=[{"role": "user", "content": user_msg}],
         )
         return _extract_json_list(resp.content[0].text)
-    except (json.JSONDecodeError, IndexError, anthropic.APIError) as e:
+    except json.JSONDecodeError:
+        if len(articles) <= 1 or _depth >= 2:
+            log.warning("JSON 파싱 실패 — 건너뜀 (depth=%d, 기사=%d건)", _depth, len(articles))
+            return []
+        mid = len(articles) // 2
+        log.warning("JSON 파싱 실패 — %d건 배치 → %d+%d건 분할 재시도 (depth=%d)",
+                    len(articles), mid, len(articles) - mid, _depth)
+        time.sleep(RATE_DELAY)
+        left         = _call_claude(client, articles[:mid],  _depth + 1)
+        time.sleep(RATE_DELAY)
+        right        = _call_claude(client, articles[mid:],  _depth + 1)
+        for r in right:
+            r["id"] = r["id"] + mid
+        return left + right
+    except (IndexError, anthropic.APIError) as e:
         log.warning("API 오류: %s — 해당 배치 건너뜀", e)
         return []
 
@@ -137,9 +153,12 @@ def run_ai_ranking(
     conn: sqlite3.Connection,
     country_code: str | None = None,
     limit_per_country: int = 200,
+    limit_per_media: int = LIMIT_PER_MEDIA,
 ) -> dict:
     """
     passed 기사 중 ai_score가 없는 것을 Claude로 분석.
+
+    limit_per_media: 매체당 최대 처리 건수 (특정 매체 독점 방지, 기본 50)
 
     Returns:
         stats dict {total, analyzed, skipped}
@@ -167,15 +186,24 @@ def run_ai_ranking(
     if country_code:
         rows = conn.execute(f"""
             SELECT a.article_id, a.title, a.summary, m.primary_country_code AS cc
-            FROM articles_raw a
+            FROM (
+                SELECT a.article_id, a.title, a.summary, a.source_id,
+                       a.published_at, a.fetched_at,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY a.source_id
+                           ORDER BY a.published_at DESC NULLS LAST, a.fetched_at DESC
+                       ) AS media_rn
+                FROM articles_raw a
+                WHERE {_base_where}
+            ) a
             JOIN media_sources m ON m.source_id = a.source_id
-            WHERE {_base_where}
-              AND m.primary_country_code = ?
+            WHERE m.primary_country_code = ?
+              AND a.media_rn <= ?
             ORDER BY m.tier ASC, a.published_at DESC NULLS LAST, a.fetched_at DESC
             LIMIT ?
-        """, (country_code, limit_per_country)).fetchall()
+        """, (country_code, limit_per_media, limit_per_country)).fetchall()
     else:
-        # window function으로 국가별 최신 N건을 한 번의 쿼리로 가져옴
+        # window function으로 국가별 최신 N건 + 매체당 최대 N건을 한 번의 쿼리로 가져옴
         rows = conn.execute(f"""
             SELECT article_id, title, summary, cc FROM (
                 SELECT a.article_id, a.title, a.summary,
@@ -183,12 +211,16 @@ def run_ai_ranking(
                        ROW_NUMBER() OVER (
                            PARTITION BY m.primary_country_code
                            ORDER BY m.tier ASC, a.published_at DESC NULLS LAST, a.fetched_at DESC
-                       ) AS rn
+                       ) AS rn,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY a.source_id
+                           ORDER BY a.published_at DESC NULLS LAST, a.fetched_at DESC
+                       ) AS media_rn
                 FROM articles_raw a
                 JOIN media_sources m ON m.source_id = a.source_id
                 WHERE {_base_where}
-            ) WHERE rn <= ?
-        """, (limit_per_country,)).fetchall()
+            ) WHERE rn <= ? AND media_rn <= ?
+        """, (limit_per_country, limit_per_media)).fetchall()
 
     # 노이즈 제목 사전 제거 (Tier 0 환율공시·로그인 페이지 등)
     clean_rows = []

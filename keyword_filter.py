@@ -152,6 +152,27 @@ FINANCE_KEYWORDS: list[str] = [
     "consumer spending", "consumer confidence", "retail sales",
     "purchasing managers", "pmi", "manufacturing index",
     "economic indicator", "economic data", "economic outlook",
+    # 물류·운송 (추가)
+    "freight rate", "shipping rate", "container", "cargo volume",
+    "port throughput", "logistics", "supply disruption",
+    "trade route", "bulk carrier", "tanker",
+    # 제조·산업 (추가)
+    "manufacturing output", "factory output", "industrial output",
+    "semiconductor", "chip maker", "foundry", "wafer fab",
+    "auto sales", "vehicle sales", "production cut", "output cut",
+    # 인프라·프로젝트 파이낸스 (추가)
+    "infrastructure project", "project finance", "bond issuance",
+    "development bank", "sovereign fund", "pension fund",
+    # 소득·빈곤·노동 (추가)
+    "per capita income", "household income", "poverty rate",
+    "living wage", "income inequality", "gini",
+    # 식량·원자재 (추가)
+    "food price", "commodity price", "grain price", "wheat price",
+    "palm oil", "rice price", "fertilizer",
+    # 관광·서비스업 (경제 지표) (추가)
+    "tourism revenue", "hotel occupancy", "airline revenue",
+    # 금융기술·결제 (추가)
+    "open banking", "buy now pay later", "bnpl", "neobank",
 ]
 
 # ---------------------------------------------------------------------------
@@ -333,6 +354,21 @@ EXCLUSION_KEYWORDS: list[str] = [
     # 기타 비금융 맥락
     "trade show", "trade fair", "trade expo", "trade union",
     "budget airline", "budget hotel", "budget travel",
+    # 크리켓 (인도 매체 주요 노이즈)
+    "ipl match", "ipl season", "ipl final", "ipl auction", "ipl trophy",
+    "cricket tournament", "cricket series", "cricket board", "cricket team",
+    "cricket stadium", "cricket score", "batting average", "bowling average",
+    "t20 match", "t20 series", "test cricket", "one-day international",
+    # 스포츠 베팅
+    "sports betting", "betting odds", "bookmaker",
+    # 연예·엔터테인먼트 (추가)
+    "celebrity couple", "celebrity divorce", "box office hit",
+    "music chart", "chart position", "streaming hit",
+    # 선거 유세 (경제 내용 없는 정치 기사)
+    "election rally", "campaign rally", "campaign trail",
+    # 자연재해·기후 (경제 연결 없는 순수 재해 보도)
+    "earthquake hit", "flood victim", "cyclone hit", "typhoon hit",
+    "wildfire", "volcanic eruption",
 ]
 
 

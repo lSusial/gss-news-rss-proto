@@ -165,10 +165,16 @@ def cmd_ai_rank(args):
         print("❌ 환경변수 ANTHROPIC_API_KEY를 설정하세요.", file=sys.stderr)
         print("   export ANTHROPIC_API_KEY=sk-ant-...", file=sys.stderr)
         sys.exit(1)
-    conn = _open()
-    country = getattr(args, "country", None) or None
-    limit   = getattr(args, "limit", 50)
-    stats = llm_ranker.run_ai_ranking(conn, country_code=country, limit_per_country=limit)
+    conn            = _open()
+    country         = getattr(args, "country", None) or None
+    limit           = getattr(args, "limit", 200)
+    limit_per_media = getattr(args, "limit_per_media", 50)
+    stats = llm_ranker.run_ai_ranking(
+        conn,
+        country_code=country,
+        limit_per_country=limit,
+        limit_per_media=limit_per_media,
+    )
     t = stats["total"]
     if t == 0:
         print("[ai-rank] 분석할 기사 없음 (이미 처리됨)")
@@ -229,10 +235,11 @@ def cmd_run_all(args):
         print("❌ 환경변수 ANTHROPIC_API_KEY를 설정하세요.", file=sys.stderr)
         sys.exit(1)
 
-    brief_type = getattr(args, "type", "daily")
-    brief_date = getattr(args, "date", None)
-    skip_fetch = getattr(args, "skip_fetch", False)
-    rank_limit = getattr(args, "limit", 200)
+    brief_type      = getattr(args, "type", "daily")
+    brief_date      = getattr(args, "date", None)
+    skip_fetch      = getattr(args, "skip_fetch", False)
+    rank_limit      = getattr(args, "limit", 200)
+    limit_per_media = getattr(args, "limit_per_media", 50)
 
     print("=" * 60)
     print(f"[run-all] 파이프라인 시작 (brief_type={brief_type})")
@@ -279,8 +286,10 @@ def cmd_run_all(args):
         print("   처리할 기사 없음")
 
     # ⑤ ai-rank
-    print(f"\n▶ [5/6] AI 중요도 분석 (국가당 최대 {rank_limit}건)...")
-    stats = llm_ranker.run_ai_ranking(conn, limit_per_country=rank_limit)
+    print(f"\n▶ [5/6] AI 중요도 분석 (국가당 최대 {rank_limit}건, 매체당 최대 {limit_per_media}건)...")
+    stats = llm_ranker.run_ai_ranking(
+        conn, limit_per_country=rank_limit, limit_per_media=limit_per_media
+    )
     if stats["total"] > 0:
         print(f"   대상={stats['total']:,}  완료={stats['analyzed']:,}  실패={stats['skipped']:,}")
     else:
@@ -335,8 +344,10 @@ def main():
                      help="전체 기사 재처리 (키워드 사전 변경 후 사용)")
     sub.add_parser("filter-report", help="필터 결과 리포트 생성 → data/filter_report.md")
     air = sub.add_parser("ai-rank",  help="AI 중요도 분석 및 한글 요약 (ANTHROPIC_API_KEY 필요)")
-    air.add_argument("--country", type=str, default=None, help="국가 코드 (예: KH, US, CN)")
-    air.add_argument("--limit",   type=int, default=200,  help="국가당 분석 건수 (기본 200)")
+    air.add_argument("--country",         type=str, default=None, help="국가 코드 (예: KH, US, CN)")
+    air.add_argument("--limit",           type=int, default=200,  help="국가당 분석 건수 (기본 200)")
+    air.add_argument("--limit-per-media", type=int, default=50,   dest="limit_per_media",
+                     help="매체당 최대 분석 건수 — 대형 매체 독점 방지 (기본 50)")
     brf = sub.add_parser("brief", help="국가별 동향 브리핑 생성 (ANTHROPIC_API_KEY 필요)")
     brf.add_argument("--country", type=str, default=None,
                      help="국가 코드 (예: US, IN)")
@@ -377,8 +388,10 @@ def main():
                      help="기준 날짜 YYYY-MM-DD (기본: 어제)")
     rna.add_argument("--limit",      type=int, default=200,
                      help="AI 분석 국가당 최대 건수 (기본 200)")
-    rna.add_argument("--skip-fetch", action="store_true", dest="skip_fetch",
+    rna.add_argument("--skip-fetch",      action="store_true", dest="skip_fetch",
                      help="피드 수집 건너뜀 (이미 수집한 경우)")
+    rna.add_argument("--limit-per-media", type=int, default=50, dest="limit_per_media",
+                     help="매체당 최대 AI 분석 건수 (기본 50)")
 
     args = p.parse_args()
     {"init": cmd_init, "fetch": cmd_fetch, "report": cmd_report,

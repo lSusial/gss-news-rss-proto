@@ -51,20 +51,24 @@ SYSTEM_PROMPT = """\
 - 무역협정, 관세, 제재
 - 금융 규제, 은행 감독
 - 에너지·반도체·공급망 (경제적 영향 중심)
+- 자연재해·선거의 경제적 영향 분석
 
 【무관한 기사 예시】
 - "food bank" 식품 지원 프로그램
-- 스포츠 경기 결과 (경제적 영향 없는 순수 스포츠)
-- 연예·문화 소식
-- 순수 과학·환경 연구 (정책 무관)
+- 크리켓·IPL·T20 경기 결과 (경제적 영향 없는 순수 스포츠)
+- 볼리우드·K팝·연예 소식
+- 순수 과학·환경 연구 (정책·경제 무관)
 - "trade" 예술품·유물 거래
 - "stock" 동물 개체수 감소
+- 선거 유세·정치 집회 (경제 정책 내용 없음)
+- 자연재해 현장 보도 (복구 비용·경제 영향 언급 없음)
+- 종교 행사·문화 축제
 
 아래 기사 목록에서 금융·경제와 무관한 기사를 JSON 형식으로 반환하세요.
 관련 있는 기사는 포함하지 마세요. 판단이 애매하면 포함(관련 있음으로 처리)하세요.
 
 응답 형식 (JSON만, 다른 텍스트 없음):
-{"rejected": [{"id": 3, "reason": "food bank 프로그램"}, {"id": 7, "reason": "스포츠 기사"}]}
+{"rejected": [{"id": 3, "reason": "food bank 프로그램"}, {"id": 7, "reason": "크리켓 경기"}]}
 (무관한 기사 없으면: {"rejected": []})
 """
 
@@ -90,9 +94,31 @@ def _build_user_message(articles: list[dict]) -> str:
     return "\n\n".join(lines)
 
 
-def _call_claude(client: anthropic.Anthropic, articles: list[dict]) -> list[dict] | None:
+def _parse_rejected(raw: str, id_offset: int = 0) -> list[dict]:
+    """API 응답 텍스트에서 rejected 목록 파싱. id_offset으로 배치 분할 시 id 보정."""
+    m = re.search(r"\{.*\}", raw, re.DOTALL)
+    if m:
+        raw = m.group(0)
+    elif "```" in raw:
+        raw = re.sub(r"```(?:json)?", "", raw).strip()
+    parsed = json.loads(raw)
+    rejected = parsed.get("rejected", [])
+    result = []
+    if isinstance(rejected, list):
+        for item in rejected:
+            if isinstance(item, dict) and "id" in item:
+                result.append({"id": int(item["id"]) + id_offset,
+                                "reason": str(item.get("reason", ""))[:100]})
+            elif isinstance(item, (int, float)):
+                result.append({"id": int(item) + id_offset, "reason": ""})
+    return result
+
+
+def _call_claude(client: anthropic.Anthropic, articles: list[dict],
+                 _depth: int = 0, _id_offset: int = 0) -> list[dict] | None:
     """무관한 기사의 배치 내 인덱스(1-based) + 이유 목록 반환.
-    Returns: [{"id": 3, "reason": "..."}, ...]
+    JSON 파싱 실패 시 배치를 절반으로 나눠 최대 2회 재시도.
+    Returns: [{"id": 3, "reason": "..."}, ...] or None on API error
     """
     user_msg = _build_user_message(articles)
     try:
@@ -102,24 +128,23 @@ def _call_claude(client: anthropic.Anthropic, articles: list[dict]) -> list[dict
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_msg}],
         )
-        raw = resp.content[0].text.strip()
-        # JSON 블록만 추출
-        m = re.search(r"\{.*\}", raw, re.DOTALL)
-        if m:
-            raw = m.group(0)
-        elif "```" in raw:
-            raw = re.sub(r"```(?:json)?", "", raw).strip()
-        parsed = json.loads(raw)
-        rejected = parsed.get("rejected", [])
-        if isinstance(rejected, list):
-            result = []
-            for item in rejected:
-                if isinstance(item, dict) and "id" in item:
-                    result.append({"id": int(item["id"]), "reason": str(item.get("reason", ""))[:100]})
-                elif isinstance(item, (int, float)):
-                    result.append({"id": int(item), "reason": ""})
-            return result
-        return []
+        return _parse_rejected(resp.content[0].text.strip(), id_offset=_id_offset)
+    except json.JSONDecodeError:
+        if len(articles) <= 1 or _depth >= 2:
+            log.warning("LLM 관문 JSON 파싱 실패 — 건너뜀 (depth=%d, 기사=%d건)", _depth, len(articles))
+            return []
+        mid = len(articles) // 2
+        log.warning("LLM 관문 JSON 파싱 실패 — %d건 배치 → %d+%d건 분할 재시도 (depth=%d)",
+                    len(articles), mid, len(articles) - mid, _depth)
+        time.sleep(RATE_DELAY)
+        left  = _call_claude(client, articles[:mid],  _depth + 1, _id_offset)
+        if left is None:
+            return None
+        time.sleep(RATE_DELAY)
+        right = _call_claude(client, articles[mid:], _depth + 1, _id_offset + mid)
+        if right is None:
+            return None
+        return left + right
     except Exception as e:
         log.warning("LLM 관문 API 오류: %s — 배치 건너뜀 (다음 실행에서 재처리)", e)
         return None  # None → 호출자가 skip, llm_prefilter=NULL 유지
