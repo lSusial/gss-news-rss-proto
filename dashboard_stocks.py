@@ -116,6 +116,10 @@ summary p {{ color:{SUB} !important; font-size:0.80em !important; }}
 
 @media (max-width:640px) {{
   .block-container {{ padding-left:0 !important; padding-right:0 !important; }}
+  [data-testid="stHorizontalBlock"] {{
+    flex-direction:row !important; flex-wrap:nowrap !important;
+  }}
+  [data-testid="stHorizontalBlock"] > div {{ min-width:0 !important; flex:1 !important; }}
 }}
 input,select,textarea,[data-baseweb="select"] * {{ font-size:16px !important; }}
 </style>
