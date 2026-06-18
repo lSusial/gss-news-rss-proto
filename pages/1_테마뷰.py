@@ -1,6 +1,7 @@
 """GLB News — 테마별 기사 뷰"""
 import html as _html
 import json
+import re as _re
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -117,7 +118,10 @@ def get_conn():
     return c
 
 conn = get_conn()
-def _e(t): return _html.escape(str(t or ""))
+def _e(t):
+    t = _html.unescape(str(t or ""))
+    t = _re.sub(r"<[^>]+>", "", t)
+    return _html.escape(t)
 def _md(h): st.markdown(h, unsafe_allow_html=True)
 
 # ── 쿼리 ──────────────────────────────────────────────────────────────────────
