@@ -13,6 +13,8 @@ from __future__ import annotations
 import concurrent.futures as cf
 import dataclasses
 import hashlib
+import html as _html_mod
+import re as _re_mod
 import logging
 import sqlite3
 import time
@@ -156,6 +158,14 @@ def sync_sources(conn: sqlite3.Connection, sources_yaml: Path) -> None:
 # ---------------------------------------------------------------------------
 # 단일 피드 수집
 # ---------------------------------------------------------------------------
+def _strip_html(text: str) -> str:
+    """RSS description에서 HTML 태그·엔티티 제거 후 순수 텍스트 반환."""
+    text = _html_mod.unescape(text or "")
+    text = _re_mod.sub(r"<[^>]+>", " ", text)
+    text = _re_mod.sub(r"[ \xa0]{2,}", " ", text)
+    return text.strip()
+
+
 def _content_hash(title: str, link: str) -> str:
     return hashlib.sha256(f"{title}\x1f{link}".encode("utf-8")).hexdigest()
 
@@ -236,7 +246,7 @@ def fetch_feed(feed_id: int, source_id: int, url: str) -> tuple[FetchResult, lis
         link = (entry.get("link") or "").strip()
         if not title or not link:
             continue
-        summary = (entry.get("summary") or entry.get("description") or "").strip()
+        summary = _strip_html(entry.get("summary") or entry.get("description") or "")
         published = _parse_published(entry) or fetched_now
         rows.append((
             feed_id,

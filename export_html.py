@@ -20,7 +20,13 @@ import json
 import sqlite3
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from html import escape as _e
+import html as _html_lib
+import re as _re_lib
+
+def _e(t):
+    t = _html_lib.unescape(str(t or ""))
+    t = _re_lib.sub(r"<[^>]+>", "", t)
+    return _html_lib.escape(t)
 
 import score_engine
 
